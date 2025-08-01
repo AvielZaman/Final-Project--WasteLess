@@ -1,5 +1,5 @@
 // backend\src\services\RecipeRecommendationService.ts
-import Ingredient from '../models/ingredient';
+import Ingredient, { IngredientStatus } from '../models/ingredient';
 import Recipe from '../models/recipe';
 import { differenceInDays } from 'date-fns';
 import {
@@ -117,7 +117,7 @@ class RecipeRecommendationService {
     });
   }
 
-  // Convert database recipes to the format expected by the algorithm - REALISTIC SCORING
+  // Convert database recipes to the format expected by the algorithm
   private static convertDbRecipesToAlgoFormat(
     recipes: any[],
     mealType: string
@@ -129,25 +129,25 @@ class RecipeRecommendationService {
     }
 
     return recipes.map((recipe) => {
-      // REALISTIC: Much lower base score range (20-60 instead of 40-90)
-      const baseScore = Math.floor(Math.random() * 40) + 20;
+      // Base score range (10-30 instead of 20-60 to allow room for bonuses)
+      const baseScore = Math.floor(Math.random() * 20) + 10;
 
-      // REALISTIC: Smaller meal type boost (1.2x instead of 1.5x)
+      // Meal type boost
       const mealTypeBoost =
         recipe.mealType === mealType
-          ? 1.2
+          ? 1.5
           : recipe.mealType === 'any'
-          ? 1.1
+          ? 1.2
           : 1.0;
 
-      // REALISTIC: Smaller complexity factor
-      const complexityFactor = 1 + (recipe.ingredients.length % 5) * 0.05; // 1.0-1.2 instead of 1.0-1.4
+      // Complexity factor
+      const complexityFactor = 1 + (recipe.ingredients.length % 5) * 0.1;
 
       const initialScore = baseScore * mealTypeBoost * complexityFactor;
 
       if (DEBUG_MODE && recipe.mealType === mealType) {
         console.log(
-          `REALISTIC base score for ${recipe.title}: ${initialScore.toFixed(1)}`
+          `Base score for ${recipe.title}: ${initialScore.toFixed(1)}`
         );
       }
 
@@ -182,19 +182,23 @@ class RecipeRecommendationService {
         console.log('Requested count:', count);
       }
 
-      // Get user's inventory
-      const ingredients = await Ingredient.find({ userId });
+      // FIXED: Get user's inventory - ONLY AVAILABLE ingredients, exclude consumed
+      const ingredients = await Ingredient.find({ 
+        userId,
+        status: { $in: [IngredientStatus.AVAILABLE, null, undefined] }
+      });
 
       if (DEBUG_MODE) {
         console.log(
-          `Found ${ingredients.length} ingredients in user's inventory`
+          `Found ${ingredients.length} AVAILABLE ingredients in user's inventory`
         );
+        console.log('Available ingredients:', ingredients.map(ing => `${ing.name} (${ing.status || 'no status'})`));
       }
 
       // If no ingredients, return empty array
       if (ingredients.length === 0) {
         if (DEBUG_MODE)
-          console.log('No ingredients found, returning empty array');
+          console.log('No available ingredients found, returning empty array');
         return [];
       }
 
@@ -216,21 +220,21 @@ class RecipeRecommendationService {
         return [];
       }
 
-      // Convert to algorithm formats with REALISTIC weighting
+      // Convert to algorithm formats
       const weightedIngredients = this.convertToWeightedIngredients(
         ingredients,
         options
       );
       const algoRecipes = this.convertDbRecipesToAlgoFormat(recipes, mealType);
 
-      // Build network and find optimal recipes with meal type preference
+      // Build network and find optimal recipes
       const flowNetwork = buildFlowNetwork(
         weightedIngredients,
         algoRecipes,
         mealType
       );
 
-      // Enhanced algorithm call - uses the maxFlow algorithm but with our modified options
+      // Enhanced algorithm call
       const recommendedRecipes = findOptimalRecipeWithAlternatives(
         flowNetwork,
         weightedIngredients,
@@ -243,12 +247,12 @@ class RecipeRecommendationService {
           `Raw recommendations from algorithm: ${recommendedRecipes.length}`
         );
         console.log(
-          'REALISTIC scores:',
+          'Final scores:',
           recommendedRecipes.map((r) => `${r.title}: ${r.score}`)
         );
       }
 
-      // Add additional metadata for frontend display - scores are already realistic from maxFlow
+      // Add additional metadata for frontend display
       const recipesWithMetadata = recommendedRecipes.map((recipe) => {
         // Count how many ingredients are expiring
         const expiringIngredients = recipe.usedIngredients.filter((ingName) => {
@@ -268,19 +272,15 @@ class RecipeRecommendationService {
           matchCount,
           totalIngredients,
           expiringIngredients,
-          // REALISTIC: Score is already calculated realistically in maxFlow, no additional processing needed
         };
       });
 
-      // REMOVED: Score normalization that was inflating scores
-      // The realistic scores from maxFlow are already properly scaled
-
-      // Sort recipes by score in descending order (already realistic)
+      // Sort recipes by score in descending order
       const sortedRecipes = recipesWithMetadata.sort((a, b) => b.score - a.score);
 
       if (DEBUG_MODE) {
         console.log(
-          'Final REALISTIC scores:',
+          'Final sorted scores:',
           sortedRecipes.map((r) => `${r.title}: ${r.score}`)
         );
       }

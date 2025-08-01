@@ -1,4 +1,4 @@
-// frontend/src/pages/RecipeDetailPage.tsx - Key changes for unified matching
+// frontend/src/pages/RecipeDetailPage.tsx - FIXED VERSION
 
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -131,12 +131,15 @@ const RecipeDetailPage = () => {
     );
   }
 
-  // UNIFIED: Use the unified matching logic for consistency
+  // FIXED: Use ONLY available ingredients (not consumed/expired/wasted)
   const availableIngredients = ingredients ? ingredients.filter(
     (ing) => !ing.status || ing.status === 'available'
   ) : [];
 
-  // Calculate actual match counts using unified matching
+  console.log('FIXED: Total ingredients in inventory:', ingredients?.length || 0);
+  console.log('FIXED: Available ingredients for matching:', availableIngredients.length);
+
+  // FIXED: Calculate actual match counts using unified matching on available ingredients only
   const matchedIngredients = recipe.ingredients.filter(ingredient => 
     isIngredientInInventory(ingredient, availableIngredients)
   );
@@ -145,10 +148,10 @@ const RecipeDetailPage = () => {
 
   if (DEBUG_MODE) {
     console.log(
-      `Recipe "${recipe.title}" has ${matchCount} matching ingredients and ${missingCount} missing ingredients using unified matching`
+      `FIXED: Recipe "${recipe.title}" has ${matchCount} matching AVAILABLE ingredients and ${missingCount} missing ingredients`
     );
-    console.log('Matched ingredients:', matchedIngredients);
-    console.log('Available inventory:', availableIngredients.map(ing => ing.name));
+    console.log('FIXED: Matched ingredients:', matchedIngredients);
+    console.log('FIXED: Available inventory items:', availableIngredients.map(ing => `${ing.name} (${ing.status || 'no status'})`));
   }
 
   // Helper function to get category color
@@ -173,11 +176,11 @@ const RecipeDetailPage = () => {
     }
   };
 
-  // Handle accepting the recipe
+  // FIXED: Handle accepting the recipe with available ingredients only
   const handleAcceptRecipe = async () => {
     if (!recipe) return;
 
-    // Get the actual inventory ingredient names using unified matching
+    // FIXED: Get the actual available inventory ingredient names using unified matching
     const inventoryIngredientNames = matchedIngredients
       .map((recipeIngredient) => {
         const details = getIngredientDetails(recipeIngredient, availableIngredients);
@@ -187,7 +190,7 @@ const RecipeDetailPage = () => {
 
     if (DEBUG_MODE) {
       console.log(
-        'Sending inventory ingredient names:',
+        'FIXED: Sending available inventory ingredient names:',
         inventoryIngredientNames
       );
     }
@@ -208,7 +211,7 @@ const RecipeDetailPage = () => {
         navigate('/inventory');
       }
     } catch (error) {
-      console.error('Error accepting recipe:', error);
+      console.error('FIXED: Error accepting recipe:', error);
     }
   };
 
@@ -229,8 +232,8 @@ const RecipeDetailPage = () => {
           {canGoBackToRecommendations ? 'Back to Recommendations' : 'Back'}
         </Button>
 
-        {/* Show button if there are ingredients, with better feedback */}
-        {ingredients && ingredients.length > 0 && (
+        {/* FIXED: Show button based on available ingredients only */}
+        {availableIngredients && availableIngredients.length > 0 && (
           <div className="flex flex-col items-end gap-2">
             {matchCount > 0 ? (
               <Button
@@ -251,12 +254,28 @@ const RecipeDetailPage = () => {
                   Need More Ingredients
                 </Button>
                 <p className="text-xs text-gray-500">
-                  You need {missingCount} more ingredients
+                  You need {missingCount} more available ingredients
                 </p>
               </div>
             )}
             <p className="text-sm text-gray-600">
-              You have {matchCount} of {recipe.ingredients.length} ingredients
+              You have {matchCount} of {recipe.ingredients.length} ingredients available
+            </p>
+          </div>
+        )}
+
+        {/* FIXED: Show message if no available ingredients */}
+        {availableIngredients && availableIngredients.length === 0 && (
+          <div className="text-center">
+            <Button
+              disabled
+              className="bg-gray-400 cursor-not-allowed mb-1"
+            >
+              <XCircle className="mr-2 h-4 w-4" />
+              No Available Ingredients
+            </Button>
+            <p className="text-xs text-gray-500">
+              All your ingredients are consumed or expired
             </p>
           </div>
         )}
@@ -281,7 +300,7 @@ const RecipeDetailPage = () => {
                 recipe.mealType.slice(1)}
             </Badge>
             <Badge className={matchCount > 0 ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"}>
-              {matchCount} / {recipe.ingredients.length} ingredients in your
+              {matchCount} / {recipe.ingredients.length} available ingredients in your
               inventory
             </Badge>
           </div>
@@ -357,7 +376,7 @@ const RecipeDetailPage = () => {
                     <p className="text-yellow-800">
                       <strong>Missing ingredients:</strong> You're missing{' '}
                       {missingCount} out of {recipe.ingredients.length}{' '}
-                      ingredients for this recipe.
+                      ingredients for this recipe from your available inventory.
                     </p>
                   </CardContent>
                 </Card>
@@ -377,23 +396,23 @@ const RecipeDetailPage = () => {
           )}
         </div>
 
-        {/* Right column - Inventory Matches */}
+        {/* Right column - Available Inventory Matches */}
         <div className="md:w-1/2">
           <Card>
             <CardHeader>
-              <CardTitle>Your Inventory Matches</CardTitle>
+              <CardTitle>Your Available Inventory Matches</CardTitle>
               <CardDescription>
-                See which ingredients you already have and what you might need
-                to buy
+                See which available ingredients you have and what you might need
+                to buy (excluding consumed items)
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-6">
-                {/* Ingredients in inventory */}
+                {/* Available ingredients in inventory */}
                 <div>
                   <h3 className="text-lg font-medium mb-2 flex items-center gap-2">
                     <Check className="h-5 w-5 text-green-600" />
-                    Ingredients You Have ({matchCount})
+                    Available Ingredients You Have ({matchCount})
                   </h3>
 
                   {matchCount > 0 ? (
@@ -435,7 +454,7 @@ const RecipeDetailPage = () => {
                     </div>
                   ) : (
                     <p className="text-gray-500 italic">
-                      You don't have any ingredients for this recipe in your
+                      You don't have any available ingredients for this recipe in your
                       inventory.
                     </p>
                   )}
@@ -461,7 +480,7 @@ const RecipeDetailPage = () => {
                   </div>
                 )}
 
-                {/* Tips */}
+                {/* FIXED: Tips section with available ingredient context */}
                 <Card className="bg-green-50 border-green-100">
                   <CardContent className="pt-6">
                     <div className="flex items-start gap-3">
@@ -472,11 +491,13 @@ const RecipeDetailPage = () => {
                         </h4>
                         <p className="text-sm text-green-700">
                           {matchCount === recipe.ingredients.length
-                            ? 'Great choice! You have all the ingredients for this recipe.'
+                            ? 'Great choice! You have all the available ingredients for this recipe.'
                             : matchCount > recipe.ingredients.length / 2
-                            ? `You have most of the ingredients for this recipe. Just need to get ${missingCount} more!`
+                            ? `You have most of the available ingredients for this recipe. Just need to get ${missingCount} more!`
                             : matchCount > 0
-                            ? `This recipe requires several ingredients you don't have in your inventory.`
+                            ? `This recipe requires several ingredients you don't have available in your inventory.`
+                            : availableIngredients.length === 0
+                            ? 'You need to buy all ingredients for this recipe since you have no available ingredients.'
                             : 'You need to buy all ingredients for this recipe.'}
                         </p>
 
@@ -485,7 +506,7 @@ const RecipeDetailPage = () => {
                           return details?.aboutToExpire;
                         }) && (
                           <p className="text-sm text-green-700 mt-2">
-                            This recipe uses ingredients that will expire soon -
+                            This recipe uses available ingredients that will expire soon -
                             perfect for reducing food waste!
                           </p>
                         )}
@@ -499,7 +520,7 @@ const RecipeDetailPage = () => {
         </div>
       </div>
 
-      {/* Accept Recipe Dialog */}
+      {/* FIXED: Accept Recipe Dialog with available ingredients context */}
       <AlertDialog open={showAcceptDialog} onOpenChange={setShowAcceptDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -507,7 +528,8 @@ const RecipeDetailPage = () => {
             <AlertDialogDescription className="space-y-2">
               <p>Did you make "{recipe?.title}"? This will:</p>
               <ul className="list-disc list-inside space-y-1 pl-2">
-                <li>Remove {matchCount} ingredients from your inventory</li>
+                <li>Remove {matchCount} available ingredients from your inventory</li>
+                <li>Mark them as 'consumed' (they'll be hidden from the inventory UI)</li>
                 <li>Update your consumption statistics</li>
                 <li>Help improve future recipe recommendations</li>
               </ul>
@@ -517,7 +539,7 @@ const RecipeDetailPage = () => {
               }) && (
                 <div className="mt-3 p-2 bg-green-100 border border-green-200 rounded">
                   <p className="text-green-700 font-medium text-sm">
-                    Great job! You're using ingredients that were about to
+                    Great job! You're using available ingredients that were about to
                     expire!
                   </p>
                 </div>

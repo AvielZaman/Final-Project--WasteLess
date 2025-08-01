@@ -1,4 +1,4 @@
-// backend/src/utils/ingredientMatcher.ts
+// backend/src/utils/ingredientMatcher.ts - FIXED VERSION
 
 interface IngredientMatch {
   ingredient: string | null;
@@ -7,159 +7,84 @@ interface IngredientMatch {
   confidence: number;
 }
 
+// Debug mode constant
+const DEBUG_MODE = false; // Set to true for detailed matching logs
+
 class IngredientMatcher {
-  // EXPANDED: Much more comprehensive common ingredients list
+  // CRITICALLY FIXED: Much more restrictive common ingredients - only truly universal ones
   private static commonIngredients = new Set([
-    // Basic cooking essentials that every household typically has
-    'water', 'salt', 'black pepper', 'pepper', 'table salt', 'sea salt', 
-    'kosher salt', 'ground black pepper', 'freshly ground black pepper',
-    'black peppercorns', 'white pepper', 'tap water', 'filtered water',
-    'ice', 'ice cubes', 'cold water', 'warm water', 'hot water',
-    
-    // Basic spices and seasonings
-    'garlic powder', 'onion powder', 'paprika', 'oregano', 'basil',
-    'thyme', 'rosemary', 'parsley', 'bay leaves', 'cinnamon',
-    'nutmeg', 'vanilla extract', 'baking soda', 'baking powder',
-    
-    // Basic cooking oils (generic)
-    'cooking oil', 'vegetable oil',
-    
-    // Basic pantry staples
-    'sugar', 'white sugar', 'flour', 'all purpose flour'
+    'water', 'tap water', 'filtered water', 'cold water', 'warm water', 'hot water',
+    'ice', 'ice cubes'
   ]);
 
-  // Enhanced synonym map - MORE REASONABLE
+  // ENHANCED: More comprehensive synonym mappings for better matching
   private static synonymMap: Record<string, string[]> = {
-    // Proteins
-    'chicken': ['chicken breast', 'chicken thigh', 'chicken leg', 'poultry', 'chicken meat', 'chicken fillet'],
-    'beef': ['ground beef', 'beef steak', 'steak', 'ground meat', 'beef chuck', 'beef roast', 'beef mince'],
+    // Proteins - enhanced for better matching
+    'chicken': ['chicken breast', 'chicken thigh', 'chicken leg', 'chicken meat', 'chicken fillet', 'poultry'],
+    'beef': ['ground beef', 'beef steak', 'ground meat', 'beef mince', 'minced beef', 'steak', 'beef chuck'],
     'pork': ['pork chop', 'pork tenderloin', 'pork shoulder', 'bacon', 'ham'],
-    'fish': ['salmon', 'tuna', 'cod', 'tilapia', 'seafood', 'white fish'],
+    'fish': ['white fish', 'fish fillet', 'salmon', 'tuna', 'cod', 'seafood'],
     
-    // Dairy
-    'milk': ['whole milk', 'skim milk', '2% milk', 'dairy milk', 'cow milk', 'fresh milk'],
+    // Dairy - more inclusive
+    'milk': ['whole milk', 'skim milk', '2% milk', 'dairy milk', 'fresh milk', 'cow milk'],
     'cheese': ['cheddar cheese', 'mozzarella cheese', 'parmesan cheese', 'swiss cheese'],
     'yogurt': ['greek yogurt', 'plain yogurt', 'natural yogurt'],
-    'butter': ['unsalted butter', 'salted butter', 'dairy butter'],
+    'butter': ['unsalted butter', 'salted butter', 'dairy butter'], 
     'cream': ['heavy cream', 'whipping cream', 'double cream', 'cooking cream'],
     
-    // Oils - RESTORED but specific
+    // Oils - reasonable mappings
     'olive oil': ['extra virgin olive oil', 'virgin olive oil', 'light olive oil'],
-    'vegetable oil': ['canola oil', 'sunflower oil', 'corn oil', 'soybean oil'],
+    'vegetable oil': ['canola oil', 'sunflower oil', 'corn oil'],
+    'canola oil': ['rapeseed oil'], // Only this specific equivalence
     'coconut oil': ['virgin coconut oil', 'refined coconut oil'],
     
-    // Vegetables
-    'tomato': ['tomatoes', 'fresh tomatoes', 'roma tomato', 'cherry tomato'],
-    'onion': ['onions', 'yellow onion', 'white onion', 'red onion', 'sweet onion'],
+    // Vegetables - basic forms
+    'tomato': ['tomatoes', 'fresh tomatoes', 'roma tomato'],
+    'onion': ['onions', 'yellow onion', 'white onion', 'red onion'],
     'potato': ['potatoes', 'red potato', 'russet potato'],
     'carrot': ['carrots', 'baby carrot'],
-    'pepper': ['bell pepper', 'red pepper', 'green pepper', 'yellow pepper'],
+    'pepper': ['bell pepper', 'red pepper', 'green pepper'],
     
-    // Fruits
+    // Fruits - basic forms
     'apple': ['apples', 'green apple', 'red apple'],
     'banana': ['bananas', 'ripe banana'],
-    'orange': ['oranges', 'navel orange'],
     'lemon': ['lemons', 'fresh lemon'],
     'lime': ['limes', 'fresh lime'],
+    'orange': ['oranges', 'navel orange'],
     
-    // Grains
-    'rice': ['white rice', 'brown rice', 'jasmine rice', 'basmati rice'],
+    // Grains - basic forms
+    'rice': ['white rice', 'brown rice', 'jasmine rice'],
     'pasta': ['spaghetti', 'penne', 'linguine', 'macaroni'],
     'bread': ['white bread', 'wheat bread', 'whole grain bread'],
-    'flour': ['all purpose flour', 'wheat flour', 'bread flour', 'plain flour'],
+    'flour': ['all purpose flour', 'wheat flour', 'plain flour'],
     
-    // Basic seasonings
-    'black pepper': ['pepper', 'ground black pepper'],
+    // Seasonings - basic forms
     'garlic': ['fresh garlic', 'garlic cloves'],
     'ginger': ['fresh ginger', 'ginger root'],
+    'black pepper': ['pepper', 'ground black pepper'],
   };
 
   // REASONABLE stop words
   private static stopWords = new Set([
-    'fresh', 'organic', 'free-range', 'natural', 'raw', 'cooked', 'frozen',
+    'fresh', 'organic', 'natural', 'raw', 'cooked', 'frozen',
     'canned', 'dried', 'whole', 'sliced', 'diced', 'chopped', 'minced',
-    'large', 'small', 'medium', 'extra', 'premium', 'grade', 'quality',
-    'lean', 'fat-free', 'low-fat', 'reduced', 'sodium', 'unsalted',
-    'white', 'red', 'green', 'yellow', 'brown', 'black', 'blue', 'purple',
-    'soft', 'hard', 'light', 'dark', 'sweet', 'sour', 'hot', 'mild',
-    'flavoured', 'flavored', 'scented', 'mixed', 'blended', 'instant',
-    'powdered', 'ground', 'crushed', 'fine', 'coarse', 'pure'
+    'large', 'small', 'medium', 'extra',
+    'lean', 'fat-free', 'low-fat', 'unsalted',
+    'white', 'red', 'green', 'yellow', 'brown', 'black',
+    'light', 'dark', 'sweet', 'mild',
+    'ground', 'fine', 'coarse', 'pure'
   ]);
 
-  // MORE SPECIFIC food categories
+  // Food categories for compatibility checking
   private static foodCategories: Record<string, string[]> = {
-    'proteins': [
-      'chicken', 'beef', 'pork', 'fish', 'turkey', 'lamb', 'egg', 'tofu', 
-      'meat', 'salmon', 'tuna', 'cod', 'shrimp', 'bacon', 'ham'
-    ],
-    'dairy': [
-      'milk', 'cheese', 'yogurt', 'cream', 'sour cream', 'butter',
-      'cottage cheese', 'mozzarella', 'cheddar', 'parmesan'
-    ],
-    'vegetables': [
-      'tomato', 'onion', 'carrot', 'potato', 'pepper', 'lettuce', 'spinach',
-      'broccoli', 'cauliflower', 'celery', 'garlic', 'ginger', 'mushroom'
-    ],
-    'fruits': [
-      'apple', 'banana', 'orange', 'grape', 'berry', 'lemon', 'lime',
-      'strawberry', 'blueberry', 'raspberry', 'peach', 'pear'
-    ],
-    'grains': [
-      'bread', 'rice', 'pasta', 'flour', 'oat', 'wheat', 'quinoa',
-      'barley', 'cereal', 'noodle', 'spaghetti', 'macaroni'
-    ],
-    'condiments_seasonings': [
-      'vinegar', 'sauce', 'ketchup', 'mustard', 'mayo', 'dressing',
-      'seasoning', 'spice', 'herb', 'salt', 'pepper'
-    ],
-    'oils_fats': [
-      'oil', 'butter', 'margarine', 'lard', 'shortening'
-    ],
-    'processed_foods': [
-      'cookies', 'crackers', 'chips', 'snacks', 'cereal', 'granola', 'cake', 'muffin'
-    ]
+    'proteins': ['chicken', 'beef', 'pork', 'fish', 'turkey', 'lamb', 'egg', 'tofu'],
+    'dairy': ['milk', 'cheese', 'yogurt', 'cream', 'butter'],
+    'vegetables': ['tomato', 'onion', 'carrot', 'potato', 'pepper', 'lettuce', 'spinach', 'garlic', 'ginger'],
+    'fruits': ['apple', 'banana', 'orange', 'grape', 'lemon', 'lime'],
+    'grains': ['bread', 'rice', 'pasta', 'flour', 'oat', 'wheat'],
+    'oils': ['oil', 'olive oil', 'canola oil', 'coconut oil'],
+    'seasonings': ['salt', 'pepper', 'garlic', 'ginger', 'herb', 'spice']
   };
-
-  // ENHANCED: Base ingredients that should NOT match with compound foods
-  private static baseIngredients = new Set([
-    'butter', 'chocolate', 'vanilla', 'strawberry', 'lemon', 'orange',
-    'coconut', 'peanut', 'almond', 'walnut', 'honey', 'maple',
-    'cinnamon', 'ginger', 'mint', 'coffee', 'tea', 'corn', 'flour',
-    'cheese', 'cream', 'milk', 'oil', 'salt', 'pepper', 'sugar'
-  ]);
-
-  // ENHANCED: Compound food indicators
-  private static compoundFoodIndicators = new Set([
-    'cookies', 'cookie', 'cake', 'muffin', 'pie', 'tart', 'bread', 'loaf',
-    'chips', 'crackers', 'snacks', 'cereal', 'granola', 'bar', 'balls',
-    'candies', 'candy', 'gum', 'chocolate', 'ice', 'cream', 'frozen',
-    'flavored', 'flavoured', 'scented', 'infused', 'marinated', 'glazed', 
-    'coated', 'stuffed', 'filled', 'topped', 'covered', 'wrapped',
-    'schnitzel', 'burger', 'pizza', 'pasta', 'noodles', 'sauce', 'soup',
-    'stew', 'casserole', 'salad', 'sandwich', 'wrap', 'roll'
-  ]);
-
-  // NEW: Specific problematic patterns to avoid
-  private static problematicPatterns = [
-    { base: 'butter', avoid: ['flavored', 'flavoured', 'scented', 'infused', 'cookies', 'cake', 'bread', 'onion', 'onions'] },
-    { base: 'chocolate', avoid: ['chip', 'chips', 'cookies', 'cake', 'milk', 'ice', 'bar'] },
-    { base: 'vanilla', avoid: ['flavored', 'flavoured', 'ice', 'cream', 'cookies', 'cake'] },
-    { base: 'corn', avoid: ['schnitzel', 'chips', 'flakes', 'syrup', 'starch', 'meal'] },
-    { base: 'flour', avoid: ['tortilla', 'bread', 'cake', 'cookies', 'pasta'] },
-    { base: 'cheese', avoid: ['crackers', 'chips', 'sauce', 'soup', 'cake'] },
-    { base: 'cream', avoid: ['ice', 'soup', 'sauce', 'cheese', 'cookies'] },
-    { base: 'milk', avoid: ['chocolate', 'powder', 'shake', 'ice', 'cake'] },
-    { base: 'oil', avoid: ['spray', 'chips', 'fried', 'cooked'] },
-    { base: 'sugar', avoid: ['cookies', 'cake', 'candy', 'syrup', 'caramel'] },
-    { base: 'lemon', avoid: ['cake', 'cookies', 'pie', 'candy', 'drops'] },
-    { base: 'orange', avoid: ['juice', 'cake', 'cookies', 'candy', 'peel'] }
-  ];
-
-  private static coreIngredientWords = new Set([
-    'chicken', 'beef', 'pork', 'fish', 'milk', 'cheese', 'bread', 'rice',
-    'pasta', 'tomato', 'onion', 'potato', 'carrot', 'apple', 'banana',
-    'flour', 'egg', 'lime', 'lemon', 'orange', 'garlic', 'ginger'
-  ]);
 
   private static normalizeIngredient(ingredient: string): string {
     return ingredient
@@ -173,17 +98,11 @@ class IngredientMatcher {
     const normalized = this.normalizeIngredient(ingredient);
     const words = normalized.split(' ');
     
-    const coreWords = words.filter(word => 
+    return words.filter(word => 
       word.length > 2 && 
       !this.stopWords.has(word) &&
       !word.match(/^\d+$/)
     );
-
-    return coreWords.sort((a, b) => {
-      const aIsCore = this.coreIngredientWords.has(a) ? 1 : 0;
-      const bIsCore = this.coreIngredientWords.has(b) ? 1 : 0;
-      return bIsCore - aIsCore;
-    });
   }
 
   private static getIngredientCategory(ingredient: string): string | null {
@@ -191,7 +110,7 @@ class IngredientMatcher {
     
     for (const [category, items] of Object.entries(this.foodCategories)) {
       for (const item of items) {
-        if (coreWords.some(word => word === item)) {
+        if (coreWords.some(word => word === item || word.includes(item))) {
           return category;
         }
       }
@@ -199,163 +118,183 @@ class IngredientMatcher {
     return null;
   }
 
-  // BALANCED: Allow same category matches plus some cross-category
+  // BALANCED: Allow same category matches plus some reasonable cross-category
   private static areCategoriesCompatible(ing1: string, ing2: string): boolean {
     const cat1 = this.getIngredientCategory(ing1);
     const cat2 = this.getIngredientCategory(ing2);
     
     if (!cat1 || !cat2) return true; // Allow if we can't determine category
-    if (cat1 === cat2) return true; // Same category is always fine
-    
-    // REASONABLE: Some cross-category matches
-    const compatiblePairs = [
-      ['dairy', 'proteins'], // cheese with meat
-      ['condiments_seasonings', 'vegetables'], // spices with vegetables
-      ['condiments_seasonings', 'proteins'], // spices with meat
-    ];
-    
-    return compatiblePairs.some(([c1, c2]) => 
-      (cat1 === c1 && cat2 === c2) || (cat1 === c2 && cat2 === c1)
-    );
+    return cat1 === cat2; // Same category matches
   }
 
-  // COMPLETELY REWRITTEN: Enhanced base ingredient mismatch detection
-  private static isBaseIngredientMismatch(inventoryIng: string, recipeIng: string): boolean {
+  // COMPLETELY FIXED: Enhanced problematic match detection
+  private static isProblematicMatch(inventoryIng: string, recipeIng: string): boolean {
     const invWords = this.extractCoreWords(inventoryIng);
     const recWords = this.extractCoreWords(recipeIng);
     
-    // Check for specific problematic patterns
-    for (const pattern of this.problematicPatterns) {
+    // CRITICAL FIX: Enhanced compound ingredient detection
+    const problematicPatterns = [
+      { 
+        base: 'butter', 
+        avoid: ['flavored', 'flavoured', 'onion', 'garlic', 'herb', 'seasoned', 'sliced', 'compound', 'spiced', 'herbed', 'mixed'] 
+      },
+      { 
+        base: 'oil', 
+        avoid: ['flavored', 'flavoured', 'infused', 'seasoned', 'spray', 'cooking', 'mixed', 'compound'] 
+      },
+      { 
+        base: 'cheese', 
+        avoid: ['flavored', 'flavoured', 'seasoned', 'processed', 'sauce', 'mixed', 'herb', 'garlic'] 
+      },
+      { 
+        base: 'milk', 
+        avoid: ['flavored', 'flavoured', 'chocolate', 'strawberry', 'condensed', 'powdered', 'mixed'] 
+      },
+      {
+        base: 'cream',
+        avoid: ['flavored', 'flavoured', 'whipped', 'sour', 'ice', 'mixed']
+      },
+      {
+        base: 'salt',
+        avoid: ['garlic', 'onion', 'herb', 'seasoned', 'flavored', 'flavoured']
+      }
+    ];
+
+    // ENHANCED: Check for specific problematic patterns
+    for (const pattern of problematicPatterns) {
       const invHasBase = invWords.includes(pattern.base);
       const recHasBase = recWords.includes(pattern.base);
       
       if (invHasBase || recHasBase) {
-        // If one has the base and the other has avoided terms
         const invHasAvoid = invWords.some(word => pattern.avoid.includes(word));
         const recHasAvoid = recWords.some(word => pattern.avoid.includes(word));
         
-        if ((invHasBase && recHasAvoid) || (recHasBase && invHasAvoid)) {
-          return true; // This is a problematic match
+        // CRITICAL: If one is base ingredient and other has compound terms, reject
+        if ((invHasBase && !invHasAvoid && recHasBase && recHasAvoid) ||
+            (recHasBase && !recHasAvoid && invHasBase && invHasAvoid)) {
+          if (DEBUG_MODE) {
+            console.log(`🚫 COMPOUND MISMATCH: "${inventoryIng}" vs "${recipeIng}" - base ingredient vs compound`);
+          }
+          return true; // This is definitely a problematic match
         }
       }
     }
-
-    // Enhanced compound food detection
-    if (this.isCompoundFoodMismatch(inventoryIng, recipeIng)) {
-      return true;
+    
+    // ENHANCED: Detect compound ingredients by word count and combinations
+    const compoundIndicators = ['sliced', 'diced', 'chopped', 'mixed', 'seasoned', 'flavored', 'flavoured', 'herbed', 'spiced'];
+    const invHasCompound = invWords.some(word => compoundIndicators.includes(word));
+    const recHasCompound = recWords.some(word => compoundIndicators.includes(word));
+    
+    // If one has compound indicators and they share a base ingredient, it's problematic
+    if (invHasCompound !== recHasCompound) {
+      const sharedWords = invWords.filter(word => recWords.includes(word));
+      if (sharedWords.length > 0) {
+        if (DEBUG_MODE) {
+          console.log(`🚫 COMPOUND DETECTION: "${inventoryIng}" vs "${recipeIng}" - compound vs simple mismatch`);
+        }
+        return true;
+      }
     }
-
-    // Oil type mismatches (but allow canola = rapeseed)
-    const oilTypes = ['olive', 'canola', 'rapeseed', 'coconut', 'sunflower', 'corn', 'sesame', 'vegetable'];
+    
+    // ENHANCED: Oil type mismatches (but allow reasonable equivalences)
+    const oilTypes = ['olive', 'canola', 'coconut', 'sunflower', 'corn', 'sesame', 'vegetable'];
     const invOilType = invWords.find(word => oilTypes.includes(word));
     const recOilType = recWords.find(word => oilTypes.includes(word));
     
-    if (invOilType && recOilType && invOilType !== recOilType) {
-      // Allow canola = rapeseed
-      if ((invOilType === 'rapeseed' && recOilType === 'canola') ||
-          (invOilType === 'canola' && recOilType === 'rapeseed')) {
-        return false;
-      }
-      return true; // Different oil types
+    if (invOilType && recOilType) {
+      // Allow exact matches or known equivalences
+      if (invOilType === recOilType) return false;
+      if ((invOilType === 'canola' && recOilType === 'rapeseed') ||
+          (invOilType === 'rapeseed' && recOilType === 'canola')) return false;
+      if ((invOilType === 'vegetable' && ['canola', 'sunflower', 'corn'].includes(recOilType)) ||
+          (recOilType === 'vegetable' && ['canola', 'sunflower', 'corn'].includes(invOilType))) return false;
+      // Different specific oil types are problematic
+      return true;
     }
 
     return false;
   }
 
-  // NEW: Compound food mismatch detection
-  private static isCompoundFoodMismatch(inventoryIng: string, recipeIng: string): boolean {
-    const invWords = this.extractCoreWords(inventoryIng);
-    const recWords = this.extractCoreWords(recipeIng);
-    
-    // Check if one is a base ingredient and the other is a compound food
-    const invIsBase = invWords.some(word => this.baseIngredients.has(word));
-    const recIsBase = recWords.some(word => this.baseIngredients.has(word));
-    
-    const invIsCompound = invWords.some(word => this.compoundFoodIndicators.has(word));
-    const recIsCompound = recWords.some(word => this.compoundFoodIndicators.has(word));
-    
-    // If one is clearly a base ingredient and the other is a compound food
-    if ((invIsBase && recIsCompound) || (recIsBase && invIsCompound)) {
-      // Additional check: they share a base ingredient word
-      const sharedBaseWords = invWords.filter(word => 
-        this.baseIngredients.has(word) && recWords.includes(word)
-      );
-      
-      if (sharedBaseWords.length > 0) {
-        return true; // This is a problematic match
-      }
-    }
-
-    // Pattern-based detection for specific cases
-    const problematicCombinations = [
-      // Ingredient appears in different contexts
-      ['butter', 'onion'],     // butter + onion = butter flavored onions
-      ['corn', 'schnitzel'],   // corn + schnitzel = corn schnitzel  
-      ['chocolate', 'chip'],   // chocolate + chip = chocolate chips
-      ['vanilla', 'ice'],      // vanilla + ice = vanilla ice cream
-      ['cheese', 'cracker'],   // cheese + cracker = cheese crackers
-      ['lemon', 'cake'],       // lemon + cake = lemon cake
-    ];
-
-    for (const [base, modifier] of problematicCombinations) {
-      const invHasBase = invWords.includes(base);
-      const recHasBase = recWords.includes(base);
-      const invHasModifier = invWords.includes(modifier);
-      const recHasModifier = recWords.includes(modifier);
-      
-      // If one has just the base and the other has base + modifier
-      if ((invHasBase && !invHasModifier && recHasBase && recHasModifier) ||
-          (recHasBase && !recHasModifier && invHasBase && invHasModifier)) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  // IMPROVED: Core word matching with better thresholds
+  // IMPROVED: More reasonable core word matching
   private static calculateCoreWordMatch(inventoryWords: string[], recipeWords: string[]): number {
     if (inventoryWords.length === 0 || recipeWords.length === 0) return 0;
     
-    let totalScore = 0;
-    let maxPossibleScore = 0;
+    let matchScore = 0;
+    let totalPossible = recipeWords.length;
     
-    for (const invWord of inventoryWords) {
-      const wordImportance = this.coreIngredientWords.has(invWord) ? 2.0 : 1.0;
-      maxPossibleScore += wordImportance;
+    for (const recWord of recipeWords) {
+      let bestMatch = 0;
       
-      let bestWordScore = 0;
-      for (const recWord of recipeWords) {
+      for (const invWord of inventoryWords) {
         if (invWord === recWord) {
-          bestWordScore = wordImportance; // Exact match
-        } else if (invWord.length >= 4 && recWord.length >= 4) {
-          // More restrictive partial matching
-          if (invWord.includes(recWord) && recWord.length >= invWord.length * 0.8) {
-            bestWordScore = Math.max(bestWordScore, wordImportance * 0.8);
-          } else if (recWord.includes(invWord) && invWord.length >= recWord.length * 0.8) {
-            bestWordScore = Math.max(bestWordScore, wordImportance * 0.8);
+          bestMatch = 1.0; // Perfect exact match
+          break;
+        } else if (invWord.length >= 3 && recWord.length >= 3) {
+          // IMPROVED: More reasonable partial matching requirements
+          if (invWord.includes(recWord) && recWord.length >= invWord.length * 0.7) {
+            bestMatch = Math.max(bestMatch, 0.85);
+          } else if (recWord.includes(invWord) && invWord.length >= recWord.length * 0.7) {
+            bestMatch = Math.max(bestMatch, 0.85);
+          } else if (invWord.length >= 4 && recWord.length >= 4) {
+            // Even more flexible for longer words
+            if (invWord.includes(recWord) || recWord.includes(invWord)) {
+              bestMatch = Math.max(bestMatch, 0.75);
+            }
           }
         }
       }
-      totalScore += bestWordScore;
+      
+      matchScore += bestMatch;
     }
     
-    return maxPossibleScore > 0 ? totalScore / maxPossibleScore : 0;
+    return matchScore / totalPossible;
   }
 
-  // Synonym matching
-  private static checkSynonymMatch(inventoryWords: string[], recipeWords: string[]): boolean {
+  // ENHANCED: Improved synonym matching
+  private static checkSynonymMatch(inventoryWords: string[], recipeWords: string[]): { match: boolean; quality: number } {
     for (const [baseWord, synonyms] of Object.entries(this.synonymMap)) {
-      const inventoryHasBase = inventoryWords.includes(baseWord) || 
-        synonyms.some(syn => this.extractCoreWords(syn).some(word => inventoryWords.includes(word)));
-      const recipeHasBase = recipeWords.includes(baseWord) || 
-        synonyms.some(syn => this.extractCoreWords(syn).some(word => recipeWords.includes(word)));
+      const invHasBase = inventoryWords.includes(baseWord);
+      const recHasBase = recipeWords.includes(baseWord);
       
-      if (inventoryHasBase && recipeHasBase) {
-        return true;
+      // Check if inventory has base word and recipe has synonym
+      if (invHasBase) {
+        for (const synonym of synonyms) {
+          const synonymWords = this.extractCoreWords(synonym);
+          const recHasSynonym = synonymWords.every(word => recipeWords.includes(word));
+          if (recHasSynonym) {
+            return { match: true, quality: 0.9 };
+          }
+        }
+      }
+      
+      // Check if recipe has base word and inventory has synonym  
+      if (recHasBase) {
+        for (const synonym of synonyms) {
+          const synonymWords = this.extractCoreWords(synonym);
+          const invHasSynonym = synonymWords.every(word => inventoryWords.includes(word));
+          if (invHasSynonym) {
+            return { match: true, quality: 0.9 };
+          }
+        }
+      }
+      
+      // Check synonym to synonym matches
+      for (const synonym1 of synonyms) {
+        const syn1Words = this.extractCoreWords(synonym1);
+        const invHasSyn1 = syn1Words.every(word => inventoryWords.includes(word));
+        
+        if (invHasSyn1) {
+          for (const synonym2 of synonyms) {
+            const syn2Words = this.extractCoreWords(synonym2);
+            const recHasSyn2 = syn2Words.every(word => recipeWords.includes(word));
+            if (recHasSyn2) {
+              return { match: true, quality: 0.85 };
+            }
+          }
+        }
       }
     }
-    return false;
+    return { match: false, quality: 0 };
   }
 
   private static isCommonIngredient(ingredient: string): boolean {
@@ -363,7 +302,7 @@ class IngredientMatcher {
     return this.commonIngredients.has(normalized);
   }
 
-  // MAIN MATCHING FUNCTION: Enhanced with improved logic and better thresholds
+  // FIXED: Main matching function with enhanced debugging and reasonable thresholds
   static findBestMatch(
     inventoryIngredient: string,
     recipeIngredients: string[],
@@ -380,22 +319,22 @@ class IngredientMatcher {
     };
 
     if (debugMode) {
-      console.log(`\n=== IMPROVED Matching "${inventoryIngredient}" ===`);
-      console.log(`Core words: [${inventoryCoreWords.join(', ')}]`);
-      console.log(`Category: ${this.getIngredientCategory(inventoryIngredient) || 'unknown'}`);
+      console.log(`\n🔍 === ENHANCED MATCHING "${inventoryIngredient}" ===`);
+      console.log(`📝 Core words: [${inventoryCoreWords.join(', ')}]`);
+      console.log(`🏷️ Category: ${this.getIngredientCategory(inventoryIngredient) || 'unknown'}`);
     }
 
     for (const recipeIngredient of recipeIngredients) {
-      // FIRST: Check if this is a common ingredient
+      // PRIORITY 1: Check if it's a common ingredient (always matches)
       if (this.isCommonIngredient(recipeIngredient)) {
-        if (debugMode) console.log(`  COMMON INGREDIENT: "${recipeIngredient}" -> Quality: 1.0`);
+        if (debugMode) console.log(`  ✅ COMMON INGREDIENT: "${recipeIngredient}" -> Quality: 1.0`);
         bestMatch = {
           ingredient: recipeIngredient,
           quality: 1.0,
           matchType: 'common',
           confidence: 1.0
         };
-        break;
+        break; // Common ingredients take absolute priority
       }
 
       const recipeNormalized = this.normalizeIngredient(recipeIngredient);
@@ -405,46 +344,49 @@ class IngredientMatcher {
       let matchType: IngredientMatch['matchType'] = 'exact';
       let confidence = 0;
 
-      // EARLY REJECTION: Check for base ingredient mismatch first
-      if (this.isBaseIngredientMismatch(inventoryIngredient, recipeIngredient)) {
-        if (debugMode) console.log(`  REJECTED: Base ingredient mismatch "${recipeIngredient}"`);
+      // PRIORITY 2: Early rejection for problematic matches
+      if (this.isProblematicMatch(inventoryIngredient, recipeIngredient)) {
+        if (debugMode) console.log(`  🚫 REJECTED (Problematic): "${recipeIngredient}" - compound/flavored mismatch detected`);
         continue;
       }
 
-      // 1. EXACT MATCH
+      // PRIORITY 3: Exact match check
       if (inventoryNormalized === recipeNormalized) {
         matchQuality = 1.0;
         confidence = 1.0;
         matchType = 'exact';
-        if (debugMode) console.log(`  EXACT MATCH: "${recipeIngredient}" -> Quality: 1.0`);
+        if (debugMode) console.log(`  ✅ EXACT MATCH: "${recipeIngredient}" -> Quality: 1.0`);
       }
       
-      // 2. SYNONYM MATCH
-      else if (this.checkSynonymMatch(inventoryCoreWords, recipeCoreWords)) {
-        matchQuality = 0.92;
-        confidence = 0.9;
-        matchType = 'synonym';
-        if (debugMode) console.log(`  SYNONYM MATCH: "${recipeIngredient}" -> Quality: 0.92`);
-      }
-      
-      // 3. CORE WORD MATCH (improved threshold)
-      else if (this.areCategoriesCompatible(inventoryIngredient, recipeIngredient)) {
-        const coreWordMatch = this.calculateCoreWordMatch(inventoryCoreWords, recipeCoreWords);
-        
-        // IMPROVED threshold - 0.75 instead of 0.7 for better precision
-        if (coreWordMatch >= 0.75) {
-          matchQuality = 0.72 + (coreWordMatch - 0.75) * 0.16; // 0.72 to 0.76 range
-          confidence = coreWordMatch;
-          matchType = 'partial';
-          if (debugMode) console.log(`  CORE WORD MATCH: "${recipeIngredient}" -> Quality: ${matchQuality.toFixed(2)}`);
-        } else if (debugMode) {
-          console.log(`  REJECTED: Core word score too low: ${coreWordMatch.toFixed(2)} (need 0.75+)`);
+      // PRIORITY 4: Synonym match check
+      else {
+        const synonymResult = this.checkSynonymMatch(inventoryCoreWords, recipeCoreWords);
+        if (synonymResult.match) {
+          matchQuality = synonymResult.quality;
+          confidence = 0.9;
+          matchType = 'synonym';
+          if (debugMode) console.log(`  ✅ SYNONYM MATCH: "${recipeIngredient}" -> Quality: ${matchQuality.toFixed(2)}`);
         }
-      } else if (debugMode) {
-        console.log(`  REJECTED: Categories not compatible`);
+        
+        // PRIORITY 5: Core word match (FIXED: More reasonable threshold)
+        else if (this.areCategoriesCompatible(inventoryIngredient, recipeIngredient)) {
+          const coreWordMatch = this.calculateCoreWordMatch(inventoryCoreWords, recipeCoreWords);
+          
+          // FIXED: More reasonable threshold from 0.85 to 0.75
+          if (coreWordMatch >= 0.75) {
+            matchQuality = 0.7 + (coreWordMatch - 0.75) * 0.2; // 0.7 to 0.75 range
+            confidence = coreWordMatch;
+            matchType = 'partial';
+            if (debugMode) console.log(`  ✅ CORE WORD MATCH: "${recipeIngredient}" -> Quality: ${matchQuality.toFixed(2)} (core: ${coreWordMatch.toFixed(2)})`);
+          } else if (debugMode) {
+            console.log(`  ❌ REJECTED (Low core): "${recipeIngredient}" -> Core score: ${coreWordMatch.toFixed(2)} (need 0.75+)`);
+          }
+        } else if (debugMode) {
+          console.log(`  ❌ REJECTED (Category): "${recipeIngredient}" - categories incompatible`);
+        }
       }
 
-      // Update best match if this is better
+      // Update best match if this is significantly better
       if (matchQuality > bestMatch.quality) {
         bestMatch = {
           ingredient: recipeIngredient,
@@ -455,10 +397,13 @@ class IngredientMatcher {
       }
     }
 
-    if (debugMode && bestMatch.ingredient) {
-      console.log(`  BEST: "${bestMatch.ingredient}" (${bestMatch.matchType}) -> ${bestMatch.quality.toFixed(2)}`);
-    } else if (debugMode) {
-      console.log(`  NO MATCH: No suitable match found`);
+    if (debugMode) {
+      if (bestMatch.ingredient) {
+        console.log(`  🎯 FINAL BEST: "${bestMatch.ingredient}" (${bestMatch.matchType}) -> Quality: ${bestMatch.quality.toFixed(2)}`);
+      } else {
+        console.log(`  ❌ NO SUITABLE MATCH FOUND for "${inventoryIngredient}"`);
+      }
+      console.log(`🔍 === END MATCHING ===\n`);
     }
 
     return bestMatch;

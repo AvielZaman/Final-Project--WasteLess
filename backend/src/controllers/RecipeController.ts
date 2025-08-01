@@ -1,4 +1,4 @@
-// backend\src\controllers\RecipeController.ts
+// backend\src\controllers\RecipeController.ts - FIXED VERSION
 import { Request, Response } from 'express';
 import Recipe from '../models/recipe';
 import Ingredient, { IngredientStatus } from '../models/ingredient';
@@ -93,6 +93,8 @@ const getRecommendedRecipes = async (req: Request, res: Response) => {
         selectedIngredients.length > 0 ? selectedIngredients : undefined,
     };
 
+    console.log('FIXED: Getting recommendations with options:', options);
+
     // Get recommendations with enhanced options
     const recommendedRecipes =
       await RecipeRecommendationService.getRecommendedRecipes(
@@ -100,6 +102,8 @@ const getRecommendedRecipes = async (req: Request, res: Response) => {
         options,
         Number(count)
       );
+
+    console.log('FIXED: Returning', recommendedRecipes.length, 'recommendations');
 
     res.status(200).json(recommendedRecipes);
   } catch (error) {
@@ -112,9 +116,9 @@ const acceptRecipe = async (req: Request, res: Response) => {
   try {
     const userId = req.userId;
     const { id: recipeId } = req.params;
-    const { usedIngredients, wasRecommended = false } = req.body; // Add wasRecommended flag
+    const { usedIngredients, wasRecommended = false } = req.body;
 
-    console.log('Accept recipe request:', {
+    console.log('FIXED: Accept recipe request:', {
       userId,
       recipeId,
       usedIngredients,
@@ -137,15 +141,17 @@ const acceptRecipe = async (req: Request, res: Response) => {
       return res.status(404).json({ message: 'Recipe not found' });
     }
 
-    // Get user's available inventory
+    // FIXED: Get ONLY available ingredients (not consumed/expired/wasted)
     const inventory = await Ingredient.find({
       userId,
       status: IngredientStatus.AVAILABLE,
     });
 
+    console.log('FIXED: Found', inventory.length, 'AVAILABLE ingredients in inventory');
+
     if (inventory.length === 0) {
       return res.status(400).json({
-        message: 'No ingredients found in your inventory',
+        message: 'No available ingredients found in your inventory',
       });
     }
 
@@ -174,7 +180,7 @@ const acceptRecipe = async (req: Request, res: Response) => {
       });
 
       if (matchingIngredient) {
-        // Update ingredient status - consume the ENTIRE quantity
+        // FIXED: Update ingredient status - consume the ENTIRE quantity
         matchingIngredient.status = IngredientStatus.CONSUMED;
         matchingIngredient.consumedDate = new Date();
         matchingIngredient.consumedInRecipe = recipe._id;
@@ -183,23 +189,23 @@ const acceptRecipe = async (req: Request, res: Response) => {
         await matchingIngredient.save();
         consumedIngredients.push(matchingIngredient);
 
-        console.log(`Consumed entire ingredient: ${matchingIngredient.name} (${matchingIngredient.quantity} ${matchingIngredient.unit})`);
+        console.log(`FIXED: Consumed entire ingredient: ${matchingIngredient.name} (${matchingIngredient.quantity} ${matchingIngredient.unit})`);
       } else {
         notFoundIngredients.push(ingredientName);
-        console.log(`Ingredient not found for exact match: "${ingredientName}"`);
+        console.log(`FIXED: Ingredient not found for exact match: "${ingredientName}"`);
       }
     }
 
     if (notFoundIngredients.length > 0 && consumedIngredients.length === 0) {
-      console.log('No ingredients matched. Sent ingredients:', usedIngredients);
+      console.log('FIXED: No ingredients matched. Sent ingredients:', usedIngredients);
       console.log(
-        'Available inventory names:',
+        'FIXED: Available inventory names:',
         inventory.map((i) => i.name)
       );
       return res.status(400).json({
-        message: 'No matching ingredients found in your inventory',
+        message: 'No matching ingredients found in your available inventory',
         notFound: notFoundIngredients,
-        hint: 'Make sure the ingredient names match EXACTLY with your inventory',
+        hint: 'Make sure the ingredient names match EXACTLY with your available inventory',
       });
     }
 
@@ -212,7 +218,7 @@ const acceptRecipe = async (req: Request, res: Response) => {
     });
     await recipe.save();
 
-    // NEW: Track recipe usage for metrics
+    // Track recipe usage for metrics
     try {
       const recipeUsage = new RecipeUsage({
         userId,
@@ -223,20 +229,21 @@ const acceptRecipe = async (req: Request, res: Response) => {
       });
       await recipeUsage.save();
       
-      console.log('Recipe usage tracked successfully');
+      console.log('FIXED: Recipe usage tracked successfully');
     } catch (usageError) {
-      console.warn('Failed to track recipe usage:', usageError);
+      console.warn('FIXED: Failed to track recipe usage:', usageError);
       // Don't fail the main operation if usage tracking fails
     }
 
     res.status(200).json({
-      message: `Recipe accepted! ${consumedIngredients.length} ingredients fully consumed.`,
+      message: `Recipe accepted! ${consumedIngredients.length} ingredients fully consumed and marked as 'consumed' status.`,
       consumedIngredients: consumedIngredients.map((ing) => ({
         name: ing.name,
         category: ing.category,
         quantity: ing.quantity,
         unit: ing.unit,
         fullyConsumed: true,
+        newStatus: 'consumed',
       })),
       recipe: {
         title: recipe.title,

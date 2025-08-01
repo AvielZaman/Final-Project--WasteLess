@@ -120,7 +120,7 @@ export const useGetRecipeById = (id: string | undefined) => {
   return { recipe, isLoading, refetch };
 };
 
-// Get recommended recipes
+// FIXED: Get recommended recipes with better error handling
 export const useGetRecommendedRecipes = (
   mealType: string = 'any',
   prioritizeExpiring: boolean = true,
@@ -145,6 +145,8 @@ export const useGetRecommendedRecipes = (
       url += `&count=${count}`;
     }
 
+    console.log('FIXED: Calling recommendation API with URL:', url);
+
     const response = await fetch(url, {
       method: 'GET',
       headers: {
@@ -154,10 +156,13 @@ export const useGetRecommendedRecipes = (
     });
 
     if (!response.ok) {
-      throw new Error('Failed to fetch recommended recipes');
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || 'Failed to fetch recommended recipes');
     }
 
-    return response.json();
+    const data = await response.json();
+    console.log('FIXED: Received recommendations:', data);
+    return data;
   };
 
   const {
@@ -173,17 +178,29 @@ export const useGetRecommendedRecipes = (
       selectedIngredients.join(','),
       count,
     ],
-    fetchRecommendedRecipes
+    fetchRecommendedRecipes,
+    {
+      // Add some retry logic for failed requests
+      retry: (failureCount, error) => {
+        // Don't retry if it's a 401 (unauthorized) or 400 (bad request)
+        if (error instanceof Error && error.message.includes('401')) return false;
+        if (error instanceof Error && error.message.includes('400')) return false;
+        return failureCount < 2;
+      },
+      // Cache results for 5 minutes
+      staleTime: 5 * 60 * 1000,
+    }
   );
 
   if (error) {
+    console.error('Error fetching recommended recipes:', error);
     toast.error('Error fetching recommended recipes');
   }
 
-  return { recommendedRecipes, isLoading, refetch };
+  return { recommendedRecipes: recommendedRecipes || [], isLoading, refetch };
 };
 
-// Accept a recipe (mark as made and update inventory)
+// FIXED: Accept a recipe with enhanced error handling and better query invalidation
 export const useAcceptRecipe = () => {
   const { getAccessTokenSilently } = useAuth0();
   const queryClient = useQueryClient();
@@ -199,7 +216,7 @@ export const useAcceptRecipe = () => {
   }) => {
     const accessToken = await getAccessTokenSilently();
 
-    console.log('Sending accept recipe request:', {
+    console.log('FIXED: Sending accept recipe request:', {
       recipeId,
       usedIngredients,
       wasRecommended,
@@ -218,7 +235,7 @@ export const useAcceptRecipe = () => {
     );
 
     if (!response.ok) {
-      const errorData = await response.json();
+      const errorData = await response.json().catch(() => ({}));
       throw new Error(errorData.message || 'Failed to accept recipe');
     }
 
@@ -229,34 +246,41 @@ export const useAcceptRecipe = () => {
     onSuccess: (data) => {
       toast.success(data.message);
       
-      // FIXED: Invalidate ALL inventory and statistics related queries
-      // Inventory queries
+      // FIXED: Comprehensive query invalidation to ensure UI updates
+      console.log('FIXED: Invalidating queries after recipe acceptance...');
+      
+      // Inventory related queries - invalidate ALL variants
       queryClient.invalidateQueries(['inventory']);
       queryClient.invalidateQueries(['inventoryStats']);
-      
-      // Statistics queries - invalidate all time ranges
       queryClient.invalidateQueries(['inventoryStatistics']);
+      
+      // Recommendation queries - force refresh
+      queryClient.invalidateQueries(['recommendedRecipes']);
+      
+      // Profile and statistics queries
+      queryClient.invalidateQueries(['fetchCurrentUser']);
       queryClient.invalidateQueries(['additionalMetrics']);
       
-      // Profile page queries
-      queryClient.invalidateQueries(['fetchCurrentUser']);
-      
-      // Force refetch of commonly used queries
-      queryClient.refetchQueries(['inventory']);
-      queryClient.refetchQueries(['inventoryStats']);
-      
-      // Invalidate all statistics queries regardless of timeRange parameter
+      // FIXED: Also invalidate any time-based statistics queries
       queryClient.invalidateQueries({
         predicate: (query) => {
           const queryKey = query.queryKey as string[];
           return queryKey[0] === 'inventoryStatistics' || 
-                 queryKey[0] === 'additionalMetrics';
+                 queryKey[0] === 'additionalMetrics' ||
+                 queryKey[0] === 'inventory' ||
+                 queryKey[0] === 'inventoryStats' ||
+                 queryKey[0] === 'recommendedRecipes';
         }
       });
       
-      console.log('Successfully invalidated all statistics queries');
+      // FIXED: Force immediate refetch of critical data
+      queryClient.refetchQueries(['inventory'], { active: true });
+      queryClient.refetchQueries(['inventoryStats'], { active: true });
+      
+      console.log('FIXED: Successfully invalidated all relevant queries');
     },
     onError: (error: Error) => {
+      console.error('FIXED: Error accepting recipe:', error);
       toast.error(error.message || 'Failed to accept recipe');
     },
   });

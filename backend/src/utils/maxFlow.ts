@@ -1,8 +1,6 @@
-// backend/src/utils/maxFlow.ts
+// backend/src/utils/maxFlow.ts - FIXED VERSION
 
 import IngredientMatcher from './ingredientMatcher';
-
-// Define interfaces for the algorithm
 
 // Enable debugging for easier troubleshooting
 const DEBUG_MODE = true;
@@ -106,12 +104,12 @@ interface EdmondsKarpResult {
 // Define nutrition category type
 type NutritionCategory = 'protein' | 'vegetables' | 'grains' | 'dairy';
 
-// UPDATED: Enhanced ingredient matching function using IngredientMatcher
+// Enhanced ingredient matching function using IngredientMatcher
 function findBestIngredientMatch(
   ingredientName: string,
   recipeIngredients: string[]
 ): IngredientMatch {
-  // Use the enhanced matcher
+  // Use the enhanced matcher with debug mode
   const match = IngredientMatcher.findBestMatch(
     ingredientName,
     recipeIngredients,
@@ -132,6 +130,13 @@ function buildFlowNetwork(
 ): FlowNetwork {
   const vertices: string[] = ['s', 't'];
 
+  if (DEBUG_MODE) {
+    console.log(`\n=== BUILDING FLOW NETWORK ===`);
+    console.log(`Total ingredients: ${weightedIngredients.length}`);
+    console.log(`Total recipes: ${recipes.length}`);
+    console.log(`Preferred meal type: ${preferredMealType}`);
+  }
+
   // Add ingredient vertices
   weightedIngredients.forEach((ing) => vertices.push(`i_${ing.id}`));
 
@@ -143,6 +148,10 @@ function buildFlowNetwork(
             recipe.mealType === preferredMealType || recipe.mealType === 'any'
         )
       : recipes;
+
+  if (DEBUG_MODE) {
+    console.log(`Filtered recipes: ${filteredRecipes.length}`);
+  }
 
   // Add recipe vertices
   filteredRecipes.forEach((recipe) => vertices.push(`r_${recipe.id}`));
@@ -169,15 +178,16 @@ function buildFlowNetwork(
     };
   });
 
-  // UPDATED: Connect ingredients to recipes with enhanced matching
+  // Connect ingredients to recipes with enhanced matching and REASONABLE threshold
   filteredRecipes.forEach((recipe) => {
     const recipeId = `r_${recipe.id}`;
     const mealTypeBoost =
       recipe.mealType === preferredMealType
-        ? 2.5 // Increased from 2.0 for stronger meal type preference
+        ? 2.5 // Strong meal type preference
         : recipe.mealType === 'any'
         ? 1.2
         : 0.8; // Penalty for non-matching meal types
+    
     const matchedIngredients: Array<
       WeightedIngredient & {
         adjustedWeight: number;
@@ -194,8 +204,8 @@ function buildFlowNetwork(
         recipe.ingredients
       );
 
-      // UPDATED: More flexible threshold (was 0.6, now 0.6 with better confidence scaling)
-      if (bestMatch.quality >= 0.6) {
+      // FIXED: More reasonable threshold for ingredient matching
+      if (bestMatch.quality >= 0.7) {
         const edgeId = `i_${ingredient.id}-${recipeId}`;
 
         const originalIngredient = ingredient.originalIngredient || {};
@@ -211,8 +221,8 @@ function buildFlowNetwork(
           Math.log10(normalizedQuantity + 1) + 1
         );
 
-        // ENHANCED: Scale weight by match quality and add quality bonus
-        const qualityBonus = bestMatch.quality >= 0.9 ? 1.2 : 1.0; // Bonus for high-quality matches
+        // Scale weight by match quality and add quality bonus
+        const qualityBonus = bestMatch.quality >= 0.9 ? 1.2 : 1.0;
         const adjustedWeight = calculateIngredientWeight(
           ingredient.weight,
           expiryFactor,
@@ -241,10 +251,12 @@ function buildFlowNetwork(
         });
 
         if (DEBUG_MODE) {
-          console.log(`✅ Enhanced match: "${ingredient.name}" -> "${bestMatch.ingredient}" (quality: ${bestMatch.quality.toFixed(2)})`);
+          console.log(`✅ ACCEPTED MATCH: "${ingredient.name}" -> "${bestMatch.ingredient}" (quality: ${bestMatch.quality.toFixed(2)})`);
         }
+      } else if (DEBUG_MODE && bestMatch.quality > 0) {
+        console.log(`❌ REJECTED LOW QUALITY: "${ingredient.name}" -> "${bestMatch.ingredient}" (quality: ${bestMatch.quality.toFixed(2)}, need 0.70+)`);
       } else if (DEBUG_MODE) {
-        console.log(`❌ No sufficient match for "${ingredient.name}" (best quality: ${bestMatch.quality.toFixed(2)})`);
+        console.log(`❌ NO MATCH: "${ingredient.name}" -> no suitable matches found`);
       }
     });
 
@@ -256,7 +268,7 @@ function buildFlowNetwork(
       matchedIngredients.length / totalRecipeIngredients
     );
 
-    // ENHANCED: Calculate recipe importance with match quality consideration
+    // Calculate recipe importance with match quality consideration
     const avgMatchQuality = matchedIngredients.length > 0
       ? matchedIngredients.reduce((sum, ing) => sum + ing.matchQuality, 0) / matchedIngredients.length
       : 0;
@@ -265,7 +277,7 @@ function buildFlowNetwork(
       matchedIngredients,
       mealTypeBoost,
       totalRecipeIngredients
-    ) * (0.8 + avgMatchQuality * 0.2); // Boost for high-quality matches
+    ) * (0.8 + avgMatchQuality * 0.2);
 
     edges[edgeId] = {
       capacity: coverageRatio * 100,
@@ -279,8 +291,8 @@ function buildFlowNetwork(
       matchedIngredients: matchedIngredients.map((ing: { name: any; }) => ing.name),
     };
 
-    if (DEBUG_MODE && matchedIngredients.length > 0) {
-      console.log(`📝 Recipe "${recipe.title}": ${matchedIngredients.length}/${totalRecipeIngredients} ingredients matched (avg quality: ${avgMatchQuality.toFixed(2)})`);
+    if (DEBUG_MODE) {
+      console.log(`📝 Recipe "${recipe.title}": ${matchedIngredients.length}/${totalRecipeIngredients} ingredients matched (${(coverageRatio * 100).toFixed(1)}% coverage)`);
     }
   });
 
@@ -291,154 +303,6 @@ function buildFlowNetwork(
     filteredRecipes,
     preferredMealType,
   };
-
-  // Add nutrition nodes
-  return addNutritionNodes(network);
-}
-
-// Function to add nutrition balance nodes to the network
-function addNutritionNodes(network: FlowNetwork): FlowNetwork {
-  // Nutrition categories
-  const nutritionCategories: NutritionCategory[] = ['protein', 'vegetables', 'grains', 'dairy'];
-  
-  // Nutrition keywords for classification
-  const nutritionKeywords: Record<NutritionCategory, string[]> = {
-    protein: [
-      'meat',
-      'chicken',
-      'beef',
-      'pork',
-      'fish',
-      'tofu',
-      'lentil',
-      'bean',
-      'egg',
-      'nuts',
-      'seed',
-      'protein',
-    ],
-    vegetables: [
-      'vegetable',
-      'carrot',
-      'broccoli',
-      'spinach',
-      'kale',
-      'tomato',
-      'pepper',
-      'onion',
-      'lettuce',
-      'cabbage',
-      'zucchini',
-      'eggplant',
-      'cucumber',
-      'avocado',
-    ],
-    grains: [
-      'rice',
-      'pasta',
-      'bread',
-      'flour',
-      'oat',
-      'grain',
-      'wheat',
-      'quinoa',
-      'barley',
-      'cereal',
-      'corn',
-      'couscous',
-      'tortilla',
-    ],
-    dairy: [
-      'milk',
-      'cheese',
-      'yogurt',
-      'cream',
-      'butter',
-      'dairy',
-      'cheddar',
-      'mozzarella',
-      'parmesan',
-    ],
-  };
-
-  if (DEBUG_MODE) {
-    console.log('Adding nutrition nodes to flow network');
-  }
-
-  // Add nutrition category vertices
-  nutritionCategories.forEach((category) => {
-    const nutriVertexId = `n_${category}`;
-    network.vertices.push(nutriVertexId);
-
-    // Connect relevant recipes to nutrition categories
-    network.filteredRecipes?.forEach((recipe) => {
-      const recipeVertexId = `r_${recipe.id}`;
-
-      // Count how many ingredients in this recipe match this nutrition category
-      const matchCount = recipe.ingredients.filter((ing) => {
-        const ingredientName = ing.toLowerCase();
-        return nutritionKeywords[category].some((keyword) =>
-          ingredientName.includes(keyword)
-        );
-      }).length;
-
-      if (matchCount > 0) {
-        const edgeId = `${nutriVertexId}-${recipeVertexId}`;
-
-        network.edges[edgeId] = {
-          capacity: matchCount,
-          flow: 0,
-          nutritionBoost: Math.min(1.5, 0.8 + matchCount * 0.2),
-          nutritionCategory: category,
-        };
-
-        if (DEBUG_MODE) {
-          console.log(
-            `Connected nutrition ${category} to recipe ${recipe.title} with ${matchCount} matches`
-          );
-        }
-      }
-    });
-  });
-
-  // Add balanced meal bonus node
-  const balancedNodeId = 'balanced_meal';
-  network.vertices.push(balancedNodeId);
-
-  // Connect to recipes with multiple nutrition categories
-  network.filteredRecipes?.forEach((recipe) => {
-    const recipeVertexId = `r_${recipe.id}`;
-
-    // Count how many nutrition categories are present in this recipe
-    const nutritionCategoriesPresent = nutritionCategories.filter(
-      (category) => {
-        const nutriVertexId = `n_${category}`;
-        const edgeId = `${nutriVertexId}-${recipeVertexId}`;
-
-        return network.edges[edgeId] !== undefined;
-      }
-    ).length;
-
-    if (nutritionCategoriesPresent >= 2) {
-      // Present in at least 2 categories
-      const edgeId = `${balancedNodeId}-${recipeVertexId}`;
-
-      // Scale the boost by the number of nutrition categories present
-      const balancedBoost = 1.0 + nutritionCategoriesPresent * 0.2; // 1.4 for 2 categories, up to 1.8 for all 4
-
-      network.edges[edgeId] = {
-        capacity: nutritionCategoriesPresent,
-        flow: 0,
-        balancedMealBoost: balancedBoost,
-      };
-
-      if (DEBUG_MODE) {
-        console.log(
-          `Recipe ${recipe.title} has ${nutritionCategoriesPresent} nutrition categories - balanced meal boost: ${balancedBoost}`
-        );
-      }
-    }
-  });
 
   return network;
 }
@@ -465,7 +329,6 @@ function normalizeQuantity(quantity: number, unit: string): number {
 
 // Calculate expiry factor based on days until expiry
 function calculateExpiryFactor(daysUntilExpiry: number): number {
-  // Binary approach: significant boost if about to expire (<=7 days), otherwise normal weight
   return daysUntilExpiry <= 7 ? 5.0 : 1.0;
 }
 
@@ -477,13 +340,11 @@ function calculateIngredientWeight(
   mealTypeBoost: number,
   quantityFactor: number
 ): number {
-  // Refined balance for different factors
-  const expiryWeight = expiryFactor * 0.45; // Increased weight for expiry
-  const matchWeight = matchQuality * 0.15; // Reasonable weight for match quality
-  const mealTypeWeight = mealTypeBoost * 0.2 * quantityFactor; // Factor in meal type and quantity
-  const baseFactorWeight = baseWeight * 0.2; // Base ingredient weight
+  const expiryWeight = expiryFactor * 0.45;
+  const matchWeight = matchQuality * 0.15;
+  const mealTypeWeight = mealTypeBoost * 0.2 * quantityFactor;
+  const baseFactorWeight = baseWeight * 0.2;
 
-  // Combined score with improved balance
   return baseFactorWeight + expiryWeight + matchWeight + mealTypeWeight;
 }
 
@@ -502,22 +363,17 @@ function calculateRecipeImportance(
 ): number {
   if (matchedIngredients.length === 0) return 0.1 * mealTypeBoost;
 
-  // Calculate average urgency of matched ingredients with higher weight
   let totalUrgency = 0;
   matchedIngredients.forEach((ingredient) => {
     const expiryUrgency = Math.max(1, 10 - (ingredient.daysUntilExpiry || 0));
     totalUrgency += (ingredient.adjustedWeight || 1) * (expiryUrgency / 10);
   });
 
-  // Calculate match percentage with better weighting
   const matchPercentage = matchedIngredients.length / totalIngredients;
-
-  // Combine factors with expiry urgency having higher importance
   return (totalUrgency * 0.6 + matchPercentage * 0.4) * mealTypeBoost;
 }
 
-// Find optimal recipe and alternatives using Edmonds-Karp algorithm
-// CRITICAL FIX: Replace the findOptimalRecipeWithAlternatives function in maxFlow.ts
+// FIXED: Find optimal recipe and alternatives with CORRECTED scoring
 function findOptimalRecipeWithAlternatives(
   graph: FlowNetwork,
   weightedIngredients: WeightedIngredient[],
@@ -529,14 +385,16 @@ function findOptimalRecipeWithAlternatives(
     const preferredMealType = graph.preferredMealType || 'any';
 
     if (DEBUG_MODE) {
-      console.log('\n=== STARTING RECIPE SCORING ===');
-      console.log(`Processing ${filteredRecipes.length} recipes`);
+      console.log('\n=== STARTING CORRECTED RECIPE SCORING ===');
+      console.log(`Processing ${filteredRecipes.length} recipes for corrected scoring`);
+      console.log(`Preferred meal type: ${preferredMealType}`);
+      console.log(`Total weighted ingredients: ${weightedIngredients.length}`);
     }
 
     // Run max flow algorithm
     const { flow, flowPaths } = edmondsKarp(graph, 's', 't');
 
-    // Calculate scores for each recipe
+    // Calculate scores for each recipe using FIXED scoring logic
     const recipeScores = filteredRecipes.map((recipe) => {
       const recipeId = `r_${recipe.id}`;
       const usedIngredientsWithExpiry: UsedIngredientWithExpiry[] = [];
@@ -550,7 +408,7 @@ function findOptimalRecipeWithAlternatives(
           ? 1.2
           : 0.8;
 
-      // Find ingredients connected to this recipe
+      // FIXED: Use reasonable threshold (0.7 instead of 0.85)
       weightedIngredients.forEach((ingredient) => {
         const ingredientId = `i_${ingredient.id}`;
         const edgeId = `${ingredientId}-${recipeId}`;
@@ -558,7 +416,7 @@ function findOptimalRecipeWithAlternatives(
         if (graph.edges[edgeId]) {
           const edge = graph.edges[edgeId];
 
-          // Consider ingredient as used if positive flow or high match quality
+          // FIXED: Use reasonable threshold (0.7 instead of 0.85)
           if ((edge.flow || 0) > 0 || (edge.matchQuality || 0) >= 0.7) {
             if (!matchedIngredientIds.has(ingredient.id)) {
               matchedIngredientIds.add(ingredient.id);
@@ -581,38 +439,40 @@ function findOptimalRecipeWithAlternatives(
                   edge.quantityFactor ||
                   Math.min(3, Math.log10(quantity + 1) + 1),
               });
+
+              if (DEBUG_MODE) {
+                console.log(`📋 Recipe "${recipe.title}" using ingredient: "${ingredient.name}" -> "${edge.matchedWith}" (quality: ${(edge.matchQuality || 0.7).toFixed(2)})`);
+              }
             }
           }
         }
       });
 
-      // FIXED: Calculate realistic score based on actual matches
+      // FIXED: Calculate correct score using enhanced scoring algorithm
       let finalScore = 0;
       
       if (usedIngredientsWithExpiry.length === 0) {
-        // NO MATCHES = VERY LOW SCORE (0-3 points max)
-        finalScore = mealTypeBoost > 2.0 ? 3 : 1; // Tiny boost for correct meal type
+        // NO MATCHES = LOW SCORE (0-5 points max based on meal type)
+        finalScore = mealTypeBoost > 2.0 ? 5 : mealTypeBoost > 1.1 ? 2 : 0;
         
         if (DEBUG_MODE) {
-          console.log(`Recipe "${recipe.title}": 0 matches, score = ${finalScore}`);
+          console.log(`❌ Recipe "${recipe.title}": 0 matches -> Score: ${finalScore}`);
         }
       } else {
-        // HAS MATCHES = Use proper scoring algorithm
-        const normalizedScore = calculateRecipeScore(
+        // HAS MATCHES = Use enhanced scoring algorithm
+        const calculatedScore = calculateCorrectRecipeScore(
           recipe,
           usedIngredientsWithExpiry,
-          mealTypeBoost,
-          { categories: [], boosts: {} },
-          1.0
+          mealTypeBoost
         );
-        finalScore = normalizedScore;
+        finalScore = calculatedScore;
         
         if (DEBUG_MODE) {
-          console.log(`Recipe "${recipe.title}": ${usedIngredientsWithExpiry.length} matches, calculated score = ${finalScore}`);
+          console.log(`✅ Recipe "${recipe.title}": ${usedIngredientsWithExpiry.length}/${recipe.ingredients.length} matches -> Score: ${finalScore}`);
         }
       }
 
-      // Calculate missing ingredients more accurately
+      // Calculate missing ingredients accurately
       const usedIngredientMatches = new Set<string>();
 
       // Track matched recipe ingredients by their original form
@@ -622,7 +482,7 @@ function findOptimalRecipeWithAlternatives(
         }
       });
 
-      // Find truly missing ingredients (not covered by any inventory item)
+      // Find truly missing ingredients
       const missedIngredients = recipe.ingredients.filter((recipeIng) => {
         const normalized = recipeIng.toLowerCase();
         return !usedIngredientMatches.has(normalized);
@@ -637,7 +497,7 @@ function findOptimalRecipeWithAlternatives(
         id: recipe.id,
         title: recipe.title,
         image: recipe.image,
-        score: Math.round(finalScore), // Use the calculated score directly
+        score: Math.round(finalScore),
         mealType: recipe.mealType || 'any',
         usedIngredients: uniqueUsedIngredients,
         missedIngredients,
@@ -650,26 +510,39 @@ function findOptimalRecipeWithAlternatives(
       };
     });
 
-    // FIXED: Sort by score - recipes with matches will naturally score higher
+    // Sort by score - recipes with better matches will naturally score higher
     const sortedRecipes = recipeScores.sort((a, b) => b.score - a.score);
 
-    // REMOVED: No fallback logic that gives high scores to no-match recipes
-    // REMOVED: No score normalization that messes up the scores
-
     if (DEBUG_MODE) {
-      console.log('\n=== FINAL SCORING RESULTS ===');
-      sortedRecipes.slice(0, Math.min(10, sortedRecipes.length)).forEach((recipe, index) => {
-        console.log(`${index + 1}. "${recipe.title}": ${recipe.score} points (${recipe.matchCount}/${recipe.totalIngredients} ingredients)`);
+      console.log('\n=== FINAL CORRECTED SCORING RESULTS ===');
+      
+      // Show detailed comparison of top recipes
+      sortedRecipes.slice(0, 10).forEach((recipe, index) => {
+        const coverage = ((recipe.matchCount || 0) / (recipe.totalIngredients || 1) * 100).toFixed(1);
+        console.log(`${index + 1}. "${recipe.title}"`);
+        console.log(`   💯 Score: ${recipe.score} points`);
+        console.log(`   📊 Coverage: ${coverage}% (${recipe.matchCount}/${recipe.totalIngredients} ingredients)`);
+        console.log(`   ⏰ Expiring: ${recipe.expiringIngredients || 0} ingredients`);
+        console.log(`   🍽️ Meal type: ${recipe.mealType}`);
+        console.log(`   ✅ Available: [${recipe.usedIngredients.slice(0, 3).join(', ')}${recipe.usedIngredients.length > 3 ? '...' : ''}]`);
+        console.log(`   ❌ Missing: [${recipe.missedIngredients.slice(0, 3).join(', ')}${recipe.missedIngredients.length > 3 ? '...' : ''}]`);
+        console.log('');
       });
-      console.log('=== END SCORING RESULTS ===\n');
+      
+      console.log('=== SCORING ANALYSIS ===');
+      const scores = recipeScores.map(r => r.score);
+      console.log(`📈 Score range: ${Math.min(...scores)} - ${Math.max(...scores)} points`);
+      console.log(`🚫 Recipes with 0 matches: ${recipeScores.filter(r => r.matchCount === 0).length}`);
+      console.log(`🎯 Recipes with perfect coverage: ${recipeScores.filter(r => r.matchCount === r.totalIngredients).length}`);
+      console.log(`📊 Average score: ${(scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1)}`);
+      console.log('=== END CORRECTED SCORING ===\n');
     }
 
-    // Return top results
     return sortedRecipes.slice(0, count);
   } catch (error) {
     console.error('Error in recipe recommendation algorithm:', error);
 
-    // FIXED: Emergency fallback with realistic scores
+    // Emergency fallback with low scores
     const mealTypeFilter = graph.preferredMealType || 'any';
     const filteredRecipes =
       mealTypeFilter !== 'any'
@@ -682,7 +555,7 @@ function findOptimalRecipeWithAlternatives(
       id: recipe.id,
       title: recipe.title,
       image: recipe.image,
-      score: recipe.mealType === mealTypeFilter ? 2 : 1, // VERY LOW emergency scores
+      score: recipe.mealType === mealTypeFilter ? 5 : 1, // Low emergency scores
       mealType: recipe.mealType || 'any',
       usedIngredients: [],
       missedIngredients: recipe.ingredients || [],
@@ -694,22 +567,17 @@ function findOptimalRecipeWithAlternatives(
   }
 }
 
-// Calculate recipe score with improved balance between factors
-function calculateRecipeScore(
+// FIXED: More generous and realistic scoring for good coverage
+function calculateCorrectRecipeScore(
   recipe: Recipe,
   usedIngredientsWithExpiry: UsedIngredientWithExpiry[],
-  mealTypeBoost: number,
-  nutritionInfo: {
-    categories: string[];
-    boosts: Record<string, number>;
-  } = { categories: [], boosts: {} },
-  balancedMealBoost: number = 1.0
+  mealTypeBoost: number
 ): number {
   const totalRecipeIngredients = recipe.ingredients.length;
 
-  // CRITICAL: If no ingredients are used, return almost zero score
+  // CRITICAL: If no ingredients are used, return very low score
   if (usedIngredientsWithExpiry.length === 0) {
-    const noMatchScore = mealTypeBoost > 2.0 ? 2 : 0; // Max 2 points for correct meal type, 0 otherwise
+    const noMatchScore = mealTypeBoost > 2.0 ? 2 : mealTypeBoost > 1.1 ? 1 : 0;
     
     if (DEBUG_MODE) {
       console.log(`"${recipe.title}": NO MATCHES -> Score: ${noMatchScore}`);
@@ -717,49 +585,127 @@ function calculateRecipeScore(
     return noMatchScore;
   }
 
-  // Calculate coverage ratio (most important factor)
+  // Calculate coverage ratio and missing ingredients count
   const coverageRatio = usedIngredientsWithExpiry.length / totalRecipeIngredients;
+  const missingIngredientsCount = totalRecipeIngredients - usedIngredientsWithExpiry.length;
   
-  // Calculate match quality
+  // Calculate average match quality
   const matchQualitySum = usedIngredientsWithExpiry.reduce(
     (sum, ing) => sum + (ing.matchQuality || 0.7), 0
   );
   const avgMatchQuality = matchQualitySum / usedIngredientsWithExpiry.length;
 
-  // Count expiring ingredients
-  const expiringIngredients = usedIngredientsWithExpiry.filter(
+  // Count expiring ingredients that are ACTUALLY USED in this recipe
+  const actualExpiringIngredients = usedIngredientsWithExpiry.filter(
     (ing) => ing.daysUntilExpiry <= 7
   );
-
-  // SIMPLE AND DIRECT SCORING
+  const actualExpiringCount = actualExpiringIngredients.length;
   
-  // Base score: Purely based on how many ingredients we have (0-80 points)
-  const baseScore = coverageRatio * 80;
-  
-  // Quality bonus: High-quality matches get small bonus (0-10 points)
-  const qualityBonus = avgMatchQuality * 10;
-  
-  // Expiry bonus: Using expiring ingredients (0-5 points)
-  const expiryBonus = (expiringIngredients.length / usedIngredientsWithExpiry.length) * 5;
-  
-  // Perfect match bonus: Having ALL ingredients (0-5 points)
-  const perfectBonus = coverageRatio >= 1.0 ? 5 : 0;
-  
-  // Calculate score before meal type boost
-  const scoreBeforeMealType = baseScore + qualityBonus + expiryBonus + perfectBonus;
-  
-  // Apply meal type boost (multiplicative for the bonus portion)
-  const mealTypeBonus = scoreBeforeMealType * (mealTypeBoost - 1.0);
-  const finalScore = scoreBeforeMealType + mealTypeBonus;
-  
-  // Cap at 100
-  const cappedScore = Math.min(100, Math.max(0, finalScore));
-
   if (DEBUG_MODE) {
-    console.log(`"${recipe.title}": ${usedIngredientsWithExpiry.length}/${totalRecipeIngredients} ingredients -> Coverage: ${(coverageRatio * 100).toFixed(0)}% -> Base: ${baseScore.toFixed(0)} -> Final: ${cappedScore.toFixed(0)}`);
+    console.log(`"${recipe.title}" - Used: ${usedIngredientsWithExpiry.length}/${totalRecipeIngredients}, Missing: ${missingIngredientsCount}, Actually expiring: ${actualExpiringCount}`);
   }
 
-  return cappedScore;
+  // NEW ALGORITHM: More practical scoring based on missing ingredients + coverage
+  let baseScore = 0;
+  
+  // PHASE 1: Base score heavily weighted by missing ingredients count (most important)
+  if (missingIngredientsCount === 0) {
+    // Perfect match - all ingredients available (90-95 base points)
+    baseScore = 90;
+  } else if (missingIngredientsCount === 1) {
+    // Only 1 missing ingredient (80-87 base points) - HIGHLY PRACTICAL
+    baseScore = 80 + Math.min(7, coverageRatio * 7); // 80-87 range
+  } else if (missingIngredientsCount === 2) {
+    // 2 missing ingredients (65-75 base points) - STILL PRACTICAL
+    baseScore = 65 + Math.min(10, coverageRatio * 10); // 65-75 range
+  } else if (missingIngredientsCount === 3) {
+    // 3 missing ingredients (45-55 base points) - MODERATE
+    baseScore = 45 + Math.min(10, coverageRatio * 10); // 45-55 range
+  } else if (missingIngredientsCount <= 5) {
+    // 4-5 missing ingredients (25-40 base points) - LESS PRACTICAL
+    baseScore = 25 + Math.min(15, coverageRatio * 15); // 25-40 range
+  } else {
+    // 6+ missing ingredients (5-25 base points) - IMPRACTICAL
+    baseScore = 5 + Math.min(20, coverageRatio * 20); // 5-25 range
+  }
+
+  // PHASE 2: Additional bonuses and adjustments
+  
+  // HIGH COVERAGE BONUS: Extra points for very high coverage
+  let coverageBonus = 0;
+  if (coverageRatio >= 0.9) {
+    coverageBonus = 8; // 90%+ coverage gets extra 8 points
+  } else if (coverageRatio >= 0.8) {
+    coverageBonus = 5; // 80%+ coverage gets extra 5 points
+  } else if (coverageRatio >= 0.7) {
+    coverageBonus = 3; // 70%+ coverage gets extra 3 points
+  }
+
+  // SHOPPING CONVENIENCE BONUS: Heavily reward recipes with very few missing ingredients
+  let shoppingBonus = 0;
+  if (missingIngredientsCount === 0) {
+    shoppingBonus = 10; // Perfect - no shopping needed
+  } else if (missingIngredientsCount === 1) {
+    shoppingBonus = 8; // Only need to buy 1 thing - very convenient
+  } else if (missingIngredientsCount === 2) {
+    shoppingBonus = 5; // Only need to buy 2 things - still convenient
+  } else if (missingIngredientsCount === 3) {
+    shoppingBonus = 2; // Need to buy 3 things - moderate
+  }
+  // No bonus for 4+ missing ingredients
+
+  // MATCH QUALITY ADJUSTMENT: Slight adjustment for match quality
+  const qualityAdjustment = (avgMatchQuality - 0.7) * 3; // ±3 points max
+  
+  // EXPIRY BONUS: Reward using expiring ingredients (but don't make it overwhelming)
+  const expiryBonus = Math.min(10, actualExpiringCount * 2); // Max 10 points for expiry
+  
+  // MEAL TYPE BONUS: Small bonus for matching preferred meal type
+  let mealTypeBonus = 0;
+  if (mealTypeBoost > 2.0) {
+    mealTypeBonus = 4; // 4 points max for preferred meal type
+  } else if (mealTypeBoost > 1.1) {
+    mealTypeBonus = 2; // 2 points for any meal type match
+  }
+
+  // SMALL RECIPE SIZE BONUS: Slightly favor smaller recipes (easier to make)
+  let recipeSizeBonus = 0;
+  if (totalRecipeIngredients <= 4) {
+    recipeSizeBonus = 2; // Simple recipes get 2 points
+  } else if (totalRecipeIngredients <= 6) {
+    recipeSizeBonus = 1; // Medium recipes get 1 point
+  }
+  
+  // Calculate final score
+  const finalScore = Math.max(0, 
+    baseScore + 
+    coverageBonus + 
+    shoppingBonus + 
+    qualityAdjustment + 
+    expiryBonus + 
+    mealTypeBonus + 
+    recipeSizeBonus
+  );
+  
+  // Cap at 100 to prevent inflation
+  const cappedScore = Math.min(100, finalScore);
+
+  if (DEBUG_MODE) {
+    console.log(`\n🔍 "${recipe.title}" REVISED PRACTICAL SCORING:`);
+    console.log(`   📊 Coverage: ${(coverageRatio * 100).toFixed(1)}% (${usedIngredientsWithExpiry.length}/${totalRecipeIngredients})`);
+    console.log(`   🛒 Missing ingredients: ${missingIngredientsCount}`);
+    console.log(`   🎯 Base score (missing-weighted): ${baseScore.toFixed(1)} points`);
+    console.log(`   📈 Coverage bonus: ${coverageBonus} points`);
+    console.log(`   🛍️ Shopping convenience bonus: ${shoppingBonus} points`);
+    console.log(`   ⚡ Quality adjustment: ${qualityAdjustment.toFixed(1)} points`);
+    console.log(`   ⏰ Expiry bonus: ${expiryBonus} points (${actualExpiringCount} expiring)`);
+    console.log(`   🍽️ Meal type bonus: ${mealTypeBonus} points`);
+    console.log(`   📝 Recipe size bonus: ${recipeSizeBonus} points`);
+    console.log(`   💯 FINAL PRACTICAL SCORE: ${cappedScore.toFixed(1)} points`);
+    console.log(`   🏆 Expected ranking: ${missingIngredientsCount <= 1 ? 'TOP TIER' : missingIngredientsCount <= 2 ? 'HIGH' : missingIngredientsCount <= 3 ? 'MEDIUM' : 'LOW'}`);
+  }
+
+  return Math.round(cappedScore);
 }
 
 // Edmonds-Karp algorithm for finding maximum flow in a network
@@ -794,7 +740,7 @@ function edmondsKarp(
     // Find augmenting paths
     let path: string[] | null;
     let pathCount = 0;
-    const maxPaths = 100; // Limit path count to prevent infinite loops
+    const maxPaths = 100;
 
     while (
       pathCount < maxPaths &&
@@ -878,7 +824,7 @@ function bfs(
       }
     }
 
-    return null; // No path found
+    return null;
   } catch (error) {
     console.error('Error in BFS algorithm:', error);
     return null;

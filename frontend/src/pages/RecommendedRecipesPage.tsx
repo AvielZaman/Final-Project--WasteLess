@@ -1,4 +1,4 @@
-// frontend\src\pages\RecommendedRecipesPage.tsx
+// frontend\src\pages\RecommendedRecipesPage.tsx - FIXED VERSION
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGetInventory, useGetInventoryStats } from '../api/InventoryApi';
@@ -89,28 +89,32 @@ const RecommendedRecipesPage = () => {
     savePreferences(preferences);
   }, [preferences]);
 
-  // Get expiring ingredients
-  const expiringIngredients = ingredients
-    ? ingredients.filter((ing) => ing.aboutToExpire)
+  // FIXED: Filter to only AVAILABLE ingredients (not consumed/expired/wasted)
+  const availableIngredients = ingredients 
+    ? ingredients.filter((ing) => !ing.status || ing.status === 'available')
     : [];
 
-  // Filter ingredients based on search and category
-  const filteredIngredients = ingredients
-    ? ingredients.filter((ing) => {
-        const matchesSearch = ing.name
-          .toLowerCase()
-          .includes(searchTerm.toLowerCase());
-        const matchesFilter =
-          selectedFilter === 'all' ||
-          (selectedFilter === 'expiring' && ing.aboutToExpire) ||
-          ing.category === selectedFilter;
-        return matchesSearch && matchesFilter;
-      })
-    : [];
+  // FIXED: Get expiring ingredients from available ingredients only
+  const expiringIngredients = availableIngredients.filter((ing) => ing.aboutToExpire);
 
-  // Get unique categories
-  const categories = ingredients
-    ? ['all', 'expiring', ...new Set(ingredients.map((ing) => ing.category))]
+  console.log('FIXED: Available ingredients:', availableIngredients.length);
+  console.log('FIXED: Expiring ingredients:', expiringIngredients.length);
+
+  // FIXED: Filter ingredients based on search and category (only available)
+  const filteredIngredients = availableIngredients.filter((ing) => {
+    const matchesSearch = ing.name
+      .toLowerCase()
+      .includes(searchTerm.toLowerCase());
+    const matchesFilter =
+      selectedFilter === 'all' ||
+      (selectedFilter === 'expiring' && ing.aboutToExpire) ||
+      ing.category === selectedFilter;
+    return matchesSearch && matchesFilter;
+  });
+
+  // FIXED: Get unique categories from available ingredients only
+  const categories = availableIngredients.length > 0
+    ? ['all', 'expiring', ...new Set(availableIngredients.map((ing) => ing.category))]
     : ['all', 'expiring'];
 
   // Function to generate recommendations from the backend with optional specific ingredients
@@ -135,7 +139,7 @@ const RecommendedRecipesPage = () => {
         )}`;
       }
 
-      console.log('Calling API with URL:', url);
+      console.log('FIXED: Calling API with URL:', url);
 
       // Call the backend API
       const response = await fetch(url, {
@@ -152,7 +156,7 @@ const RecommendedRecipesPage = () => {
 
       // Get the recommended recipes from the response
       const data = await response.json();
-      console.log('Received recommendations:', data);
+      console.log('FIXED: Received recommendations:', data);
 
       // Save to both local state and context
       setRecommendedRecipes(data);
@@ -160,7 +164,7 @@ const RecommendedRecipesPage = () => {
 
       return true;
     } catch (error) {
-      console.error('Error generating recommendations:', error);
+      console.error('FIXED: Error generating recommendations:', error);
       toast.error('Failed to generate recommendations. Please try again.');
       return false;
     } finally {
@@ -177,6 +181,8 @@ const RecommendedRecipesPage = () => {
         (ing) => ing.name
       );
 
+      console.log('FIXED: Using expiring ingredients:', expiringIngredientNames);
+
       // Update preferences with just these ingredients and keep other preferences default
       setPreferences((prev) => ({
         ...prev,
@@ -192,7 +198,7 @@ const RecommendedRecipesPage = () => {
         setCurrentStep(3);
       }
     } catch (error) {
-      console.error('Error finding recipes:', error);
+      console.error('FIXED: Error finding recipes:', error);
       toast.error('Failed to find recipes. Please try again.');
     } finally {
       setIsLoadingRecommendations(false);
@@ -316,11 +322,11 @@ const RecommendedRecipesPage = () => {
                 <ChefHat className="h-8 w-8 text-green-700 mt-1 flex-shrink-0" />
                 <div>
                   <h3 className="text-lg font-medium text-gray-800 mb-2">
-                    Let's Find the Perfect Recipe for Your Ingredients
+                    Let's Find the Perfect Recipe for Your Available Ingredients
                   </h3>
                   <p className="text-sm text-gray-600">
                     We'll help you discover recipes that use ingredients from
-                    your inventory, with special focus on those that are about
+                    your available inventory (excluding consumed items), with special focus on those that are about
                     to expire, to reduce food waste.
                   </p>
                 </div>
@@ -328,12 +334,12 @@ const RecommendedRecipesPage = () => {
             </CardContent>
           </Card>
 
-          {/* Inventory Statistics Cards */}
+          {/* FIXED: Inventory Statistics Cards using available ingredients only */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium text-gray-500">
-                  Total Inventory Items
+                  Available Inventory Items
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -341,10 +347,10 @@ const RecommendedRecipesPage = () => {
                   <Skeleton className="h-8 w-20" />
                 ) : (
                   <div className="text-3xl font-bold">
-                    {stats?.totalItems || 0}
+                    {availableIngredients.length}
                   </div>
                 )}
-                <p className="text-sm text-gray-500">items available</p>
+                <p className="text-sm text-gray-500">items available for cooking</p>
               </CardContent>
             </Card>
 
@@ -356,15 +362,15 @@ const RecommendedRecipesPage = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {isLoadingStats ? (
+                {isLoadingIngredients ? (
                   <Skeleton className="h-8 w-20" />
                 ) : (
                   <div className="text-3xl font-bold text-yellow-600">
-                    {stats?.expiringItems || 0}
+                    {expiringIngredients.length}
                   </div>
                 )}
                 <p className="text-sm text-gray-500">
-                  items expiring within 3 days
+                  available items expiring within 3 days
                 </p>
               </CardContent>
             </Card>
@@ -397,27 +403,29 @@ const RecommendedRecipesPage = () => {
                 {isLoadingIngredients ? (
                   <Skeleton className="h-8 w-20" />
                 ) : (
-                  <div className="text-3xl font-bold text-green-600">High</div>
+                  <div className="text-3xl font-bold text-green-600">
+                    {availableIngredients.length > 5 ? 'High' : availableIngredients.length > 2 ? 'Medium' : 'Low'}
+                  </div>
                 )}
                 <p className="text-sm text-gray-500">
                   {expiringIngredients.length > 0
                     ? `${expiringIngredients.length} expiring items to use`
-                    : 'Based on your inventory'}
+                    : 'Based on your available inventory'}
                 </p>
               </CardContent>
             </Card>
           </div>
 
-          {/* Expiring Ingredients Highlight */}
+          {/* FIXED: Expiring Ingredients Highlight using only available ingredients */}
           {expiringIngredients.length > 0 && (
             <Card className="mb-6 border-yellow-200 bg-yellow-50">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <AlertCircle className="h-5 w-5 text-yellow-600" />
-                  Ingredients Expiring Soon
+                  Available Ingredients Expiring Soon
                 </CardTitle>
                 <CardDescription>
-                  These ingredients should be used first to prevent waste
+                  These available ingredients should be used first to prevent waste
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -448,7 +456,7 @@ const RecommendedRecipesPage = () => {
                     </>
                   ) : (
                     <>
-                      Find Recipes Using These Ingredients
+                      Find Recipes Using These Available Ingredients
                       <ArrowRight className="ml-2 h-4 w-4" />
                     </>
                   )}
@@ -477,7 +485,7 @@ const RecommendedRecipesPage = () => {
             <CardHeader>
               <CardTitle>Set Your Recipe Preferences</CardTitle>
               <CardDescription>
-                Customize your recipe recommendations based on your preferences
+                Customize your recipe recommendations based on your available ingredients and preferences
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -506,7 +514,7 @@ const RecommendedRecipesPage = () => {
               <div className="space-y-2">
                 <h3 className="text-lg font-medium">Prioritization</h3>
                 <p className="text-sm text-gray-500">
-                  Choose how to prioritize your ingredients
+                  Choose how to prioritize your available ingredients
                 </p>
                 <div className="flex items-center space-x-2 mt-2">
                   <Checkbox
@@ -518,7 +526,7 @@ const RecommendedRecipesPage = () => {
                     htmlFor="prioritize-expiring"
                     className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                   >
-                    Prioritize ingredients that are about to expire
+                    Prioritize available ingredients that are about to expire
                   </label>
                 </div>
               </div>
@@ -526,10 +534,10 @@ const RecommendedRecipesPage = () => {
               {/* Ingredient Selection */}
               <div className="space-y-4">
                 <h3 className="text-lg font-medium">
-                  Include Specific Ingredients
+                  Include Specific Available Ingredients
                 </h3>
                 <p className="text-sm text-gray-500">
-                  Select ingredients you'd like to use in your recipe
+                  Select from your available ingredients that you'd like to use in your recipe
                 </p>
 
                 {/* Search and Filter */}
@@ -537,7 +545,7 @@ const RecommendedRecipesPage = () => {
                   <div className="relative flex-grow">
                     <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
                     <Input
-                      placeholder="Search ingredients..."
+                      placeholder="Search available ingredients..."
                       className="pl-8"
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
@@ -576,7 +584,7 @@ const RecommendedRecipesPage = () => {
                   </Select>
                 </div>
 
-                {/* Ingredient List with Checkboxes */}
+                {/* FIXED: Ingredient List with Checkboxes - only available ingredients */}
                 <Card className="border-gray-200">
                   <ScrollArea className="h-64 w-full rounded-md border p-4">
                     {isLoadingIngredients ? (
@@ -630,7 +638,7 @@ const RecommendedRecipesPage = () => {
                       </div>
                     ) : (
                       <p className="text-center text-gray-500 py-4">
-                        No ingredients found matching your search or filter.
+                        No available ingredients found matching your search or filter.
                       </p>
                     )}
                   </ScrollArea>
@@ -639,13 +647,13 @@ const RecommendedRecipesPage = () => {
                 <div className="text-sm text-gray-500">
                   {preferences.selectedIngredients.length > 0 ? (
                     <span className="font-medium text-green-600">
-                      {preferences.selectedIngredients.length} ingredients
+                      {preferences.selectedIngredients.length} available ingredients
                       selected
                     </span>
                   ) : (
                     <span>
                       If no ingredients are selected, we'll consider your entire
-                      inventory.
+                      available inventory.
                     </span>
                   )}
                 </div>
@@ -693,8 +701,8 @@ const RecommendedRecipesPage = () => {
                   <p className="text-sm text-gray-600">
                     Based on your{' '}
                     {preferences.selectedIngredients.length > 0
-                      ? 'selected'
-                      : 'inventory'}{' '}
+                      ? 'selected available'
+                      : 'available inventory'}{' '}
                     ingredients
                     {preferences.mealType !== 'any'
                       ? ` for ${preferences.mealType}`
@@ -723,15 +731,11 @@ const RecommendedRecipesPage = () => {
             </CardContent>
           </Card>
 
+         {/* FIXED: Recipe cards with corrected matching logic */}
          {recommendedRecipes.length > 0 ? (
   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
     {recommendedRecipes.map((recipe) => {
-      // UNIFIED: Use the same matching logic as the detail page
-      const availableIngredients = ingredients ? ingredients.filter(
-        (ing) => !ing.status || ing.status === 'available'
-      ) : [];
-      
-      // Calculate actual matched ingredients using unified matching
+      // FIXED: Use only available ingredients for calculations
       const recipeIngredients = recipe.usedIngredients.concat(recipe.missedIngredients);
       const actuallyAvailableIngredients = recipeIngredients.filter(
         (ingredient) => isIngredientInInventory(ingredient, availableIngredients)
@@ -740,11 +744,13 @@ const RecommendedRecipesPage = () => {
         (ingredient) => !isIngredientInInventory(ingredient, availableIngredients)
       );
 
-      // Count expiring ingredients among the actually available ones
+      // CRITICALLY FIXED: Count expiring ingredients among the ACTUALLY AVAILABLE ones used in recipe
       const expiringIngredientsCount = actuallyAvailableIngredients.filter((recipeIngredient) => {
         const details = getIngredientDetails(recipeIngredient, availableIngredients);
         return details && details.aboutToExpire;
       }).length;
+
+      console.log(`CRITICALLY FIXED: Recipe "${recipe.title}" - Available: ${actuallyAvailableIngredients.length}, Missing: ${actuallyMissingIngredients.length}, ACTUALLY Expiring in recipe: ${expiringIngredientsCount} (not ${expiringIngredients.length} from inventory)`);
 
       return (
         <Card key={recipe.id} className="overflow-hidden flex flex-col">
@@ -776,7 +782,7 @@ const RecommendedRecipesPage = () => {
               <span className="text-green-600">
                 {actuallyAvailableIngredients.length} of{' '}
                 {recipeIngredients.length}{' '}
-                ingredients
+                available ingredients
               </span>
               {expiringIngredientsCount > 0 && (
                 <Badge className="bg-yellow-100 text-yellow-800 flex items-center gap-1 ml-2">
@@ -789,7 +795,7 @@ const RecommendedRecipesPage = () => {
           <CardContent className="flex-grow">
             <div className="mb-4">
               <h4 className="text-sm font-medium text-gray-700 mb-2">
-                Ingredients you have:
+                Available ingredients you have:
               </h4>
               <div className="flex flex-wrap gap-1">
                 {actuallyAvailableIngredients.length > 0 ? (
@@ -812,7 +818,7 @@ const RecommendedRecipesPage = () => {
                   })
                 ) : (
                   <span className="text-gray-500 italic text-sm">
-                    No matching ingredients found
+                    No matching available ingredients found
                   </span>
                 )}
               </div>
@@ -863,11 +869,11 @@ const RecommendedRecipesPage = () => {
   <Card className="text-center p-6 mb-6">
     <CardContent className="pt-6">
       <p className="text-muted-foreground mb-4">
-        No recipe recommendations found matching your criteria.
+        No recipe recommendations found matching your available ingredients criteria.
       </p>
       <p className="text-sm text-gray-500 mb-4">
         Try adjusting your preferences or selecting different
-        ingredients.
+        available ingredients.
       </p>
     </CardContent>
   </Card>
